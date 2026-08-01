@@ -261,8 +261,13 @@ func displacement(rest: InkBounds, pressed: InkBounds) -> Int {
     pressed.y - rest.y
 }
 
-private func isValidDisplacementGrowth(default defaultDelta: Int, ax axDelta: Int) -> Bool {
-    defaultDelta > 0 && axDelta > defaultDelta
+private func validateDisplacementGrowth(default defaultDelta: Int, ax axDelta: Int) throws {
+    guard defaultDelta > 0 else {
+        throw AnalyzerError.invalid("default displacement must be positive")
+    }
+    guard axDelta > defaultDelta else {
+        throw AnalyzerError.invalid("AX displacement must exceed default")
+    }
 }
 
 private func runSelfTest() throws {
@@ -496,9 +501,19 @@ private func runSelfTest() throws {
 
     let selectedDefaultDelta = displacement(rest: defaultSelection.rest.ink, pressed: defaultSelection.pressed.ink)
     let selectedAXDelta = displacement(rest: axSelection.rest.ink, pressed: axSelection.pressed.ink)
-    precondition(isValidDisplacementGrowth(default: selectedDefaultDelta, ax: selectedAXDelta))
-    precondition(!isValidDisplacementGrowth(default: selectedDefaultDelta, ax: selectedDefaultDelta), "equal AX displacement must be rejected")
-    precondition(!isValidDisplacementGrowth(default: 0, ax: selectedAXDelta), "default displacement must be positive")
+    try validateDisplacementGrowth(default: selectedDefaultDelta, ax: selectedAXDelta)
+    do {
+        try validateDisplacementGrowth(default: selectedDefaultDelta, ax: selectedDefaultDelta)
+        preconditionFailure("equal AX displacement must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "AX displacement must exceed default")
+    }
+    do {
+        try validateDisplacementGrowth(default: 0, ax: selectedAXDelta)
+        preconditionFailure("zero default displacement must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "default displacement must be positive")
+    }
 
     let rest = try measureInk(restPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
     let defaultPressed = try measureInk(defaultPressedPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
@@ -509,8 +524,8 @@ private func runSelfTest() throws {
     let defaultDelta = displacement(rest: rest, pressed: defaultPressed)
     let axDelta = displacement(rest: rest, pressed: axPressed)
     precondition(defaultDelta == 3, "default displacement must be 3")
-    precondition(axDelta > defaultDelta, "AX displacement must exceed default")
     precondition(axDelta == 6, "AX displacement must be 6")
+    try validateDisplacementGrowth(default: defaultDelta, ax: axDelta)
     print("PASS default=\(defaultDelta) ax=\(axDelta)")
 }
 
@@ -789,8 +804,22 @@ private func runSelection(arguments: [String]) throws {
     print("RESULT label=\(label) top_displacement=\(topDelta) center_displacement=\(formattedCenterDelta)")
 }
 
+private func runGrowthValidation(arguments: [String]) throws {
+    guard arguments.count == 5,
+          arguments[0] == "--validate-growth",
+          arguments[1] == "--default",
+          arguments[3] == "--ax",
+          let defaultDelta = Int(arguments[2]),
+          let axDelta = Int(arguments[4])
+    else {
+        throw AnalyzerError.invalid("--validate-growth requires integer --default N --ax N")
+    }
+    try validateDisplacementGrowth(default: defaultDelta, ax: axDelta)
+    print("RESULT displacement-growth default=\(defaultDelta) ax=\(axDelta)")
+}
+
 private func usage() -> Never {
-    fputs("usage: measure-place-card-press.swift --self-test\n       measure-place-card-press.swift --select --candidates DIR --frame FILE --rest-output PNG --pressed-output PNG --label NAME\n", stderr)
+    fputs("usage: measure-place-card-press.swift --self-test\n       measure-place-card-press.swift --select --candidates DIR --frame FILE --rest-output PNG --pressed-output PNG --label NAME\n       measure-place-card-press.swift --validate-growth --default N --ax N\n", stderr)
     exit(64)
 }
 
@@ -800,6 +829,8 @@ do {
         try runSelfTest()
     } else if arguments.first == "--select" {
         try runSelection(arguments: arguments)
+    } else if arguments.first == "--validate-growth" {
+        try runGrowthValidation(arguments: arguments)
     } else {
         usage()
     }

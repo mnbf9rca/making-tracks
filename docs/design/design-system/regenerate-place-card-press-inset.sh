@@ -755,8 +755,22 @@ ax_displacement="$(printf '%s\n' "$ax_measurement" | awk -F 'top_displacement=' 
 case "$default_displacement:$ax_displacement" in
   *[!0-9:]*|:) die "analyzer did not emit both integer displacements" ;;
 esac
-[ "$default_displacement" -gt 0 ] || die "default displacement must be positive"
-[ "$ax_displacement" -gt "$default_displacement" ] || die "AX displacement must exceed default"
+set +e
+growth_validation="$(xcrun swift "$analyzer" --validate-growth \
+  --default "$default_displacement" \
+  --ax "$ax_displacement" 2>&1)"
+growth_validation_status=$?
+set -e
+case "$growth_validation_status:$growth_validation" in
+  "0:RESULT displacement-growth default=$default_displacement ax=$ax_displacement") ;;
+  "1:measure-place-card-press: default displacement must be positive")
+    die "default displacement must be positive"
+    ;;
+  "1:measure-place-card-press: AX displacement must exceed default")
+    die "AX displacement must exceed default"
+    ;;
+  *) die "analyzer growth validation failed status=$growth_validation_status: $growth_validation" ;;
+esac
 
 assets=(
   place-card-press-inset-default-rest.png
