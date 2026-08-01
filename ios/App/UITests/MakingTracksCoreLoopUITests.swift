@@ -600,6 +600,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             38,
             "AX category chips must mount the frozen expanded visual geometry."
         )
+        var scopeRowsChecked = 0
+        var quietRowsChecked = 0
         for identifier in [
             "explore.scope.include-hidden",
             "explore.scope.show-saved",
@@ -617,15 +619,27 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             XCTAssertTrue(control.isHittable)
             XCTAssertGreaterThanOrEqual(control.frame.height, 44)
             if identifier.hasPrefix("explore.scope.") {
+                scopeRowsChecked += 1
                 XCTAssertGreaterThanOrEqual(
                     control.frame.height,
                     86,
                     "AX Scope rows must mount the frozen expanded minimum height."
                 )
-            } else {
+            } else if isQuietDestination {
+                quietRowsChecked += 1
                 assertContainedInAppFrame(control, in: app)
             }
         }
+        XCTAssertEqual(
+            scopeRowsChecked,
+            3,
+            "The AX Scope-row minimum must execute for every scope control."
+        )
+        XCTAssertEqual(
+            quietRowsChecked,
+            2,
+            "The AX quiet-row containment proof must execute for every destination."
+        )
         attachScreenshot(named: "explore-door-ax", forceExport: true)
         exportMeasurements(
             named: "explore-door-ax",
