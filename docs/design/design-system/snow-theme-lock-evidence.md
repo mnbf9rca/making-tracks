@@ -34,6 +34,7 @@ The machine-readable source is [`snow-theme-lock-measurements.txt`](snow-theme-l
 ## Provenance and gate
 
 - Production preference introduced in commit `b0c597ad58e29f29bd21a6d33169b96b6c4f013d` on `wp-589-dark-mode-fix`, based on `origin/ios` `04e4201`.
+- Evidence source head: `2a16556d421533cc2449d54b3f69b142f14e8964` (production preference, DEBUG bypass, rendered oracle, and regeneration harness).
 - Test: `MakingTracksCoreLoopUITests.testSnowSettingsAdaptiveInkIsLegibleAndInvariantAcrossSystemAppearances`.
 - Harness: XCTest `XCUIScreen.main.screenshot()` under Xcode 26.6 (17F113).
 - Device: locked `codex2` iPhone 17 simulator, iOS 26.5 (23F77), 402×874 pt @3×.
