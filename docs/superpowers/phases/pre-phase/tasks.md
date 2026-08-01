@@ -24,6 +24,9 @@ Format: one line per transition, newest last:
 - 2026-08-01T05:15Z codex2 #589 evidence captured — focused Release gate passed 1/1; six 1206×2622 Light/Dark captures and measured card-region ledger recorded under `docs/design/design-system/snow-theme-lock-*`
 - 2026-08-01T05:51Z codex2 #589 adversarial proof fixes green — focused Release gate passed 1/1; legacy/fixed Light diff is 0 on all three surfaces, legacy/fixed Dark teeth are 26,066 / 36,157 / 4,242 pixels, every contrast sample contains local raised-surface pixels, and exports are simulator-scoped before validate-then-install
 - 2026-08-01T06:49Z codex2 #589 final host gate green — final head `f8e7df2`; `swift test` 516/516; Release and Debug build-for-testing passed; app unit 245/245 and UI 97/97 (342 total, 0 failed/skipped); test phase 2,686s; exact result counts extracted, task xcresults deleted, reusable `/private/tmp/dd-codex2` retained, seat FREE
+- 2026-08-01T08:11Z codex1 #584 claimed — urgent fix-now assignment from planner: boot all four Phase 2 evidence scripts on demand and classify their committed README packets under the narrowed evidence law
+- 2026-08-01T08:11Z codex1 #584 branch — `wp-584-evidence-pipeline` from `origin/ios` `9559ca2`; isolated worktree `.worktrees/wp-584-evidence-pipeline`
+- 2026-08-01T08:11Z codex1 #584 tests green — behavioral RED proved all four cold-seat failures; minimal boot waits pass 74/74 host simulator-lock tests; ShellCheck across scripts and evidence scripts, agent-law lint, and diff check are clean
 
 ## Done (pre-phase)
 
