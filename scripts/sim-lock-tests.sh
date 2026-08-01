@@ -234,30 +234,60 @@ consumer_scripts=(
   "$HERE/../docs/design/design-system/regenerate-t2.10-about.sh"
 )
 
+CONSUMER_FAKE_BIN="$TMP/consumer-fake-bin"
+CONSUMER_CALL_LOG="$TMP/consumer-calls.log"
+mkdir -p "$CONSUMER_FAKE_BIN"
+# shellcheck disable=SC2016 # Expanded when the fake xcrun program runs.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  '{ printf "xcrun:"; printf "<%s>" "$@"; printf "\n"; } >>"$MT_TEST_CONSUMER_CALL_LOG"' \
+  'if [ "$#" -eq 4 ] && [ "$1" = simctl ] && [ "$2" = bootstatus ] &&' \
+  '   [ "$3" = "$MT_SIM_LOCK_UDID" ] && [ "$4" = -b ]; then exit 0; fi' \
+  'exit 97' \
+  >"$CONSUMER_FAKE_BIN/xcrun"
+# shellcheck disable=SC2016 # Expanded when the fake xcodebuild program runs.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [ "$#" -eq 1 ] && [ "$1" = -version ]; then' \
+  '  printf "Xcode 26.6\nBuild version 17F113\n"' \
+  '  exit 0' \
+  'fi' \
+  '{ printf "xcodebuild:"; printf "<%s>" "$@"; printf "\n"; } >>"$MT_TEST_CONSUMER_CALL_LOG"' \
+  'exit 97' \
+  >"$CONSUMER_FAKE_BIN/xcodebuild"
+chmod +x "$CONSUMER_FAKE_BIN/xcrun" "$CONSUMER_FAKE_BIN/xcodebuild"
+
 for consumer in "${consumer_scripts[@]}"; do
   consumer_name="$(basename "$consumer")"
+  : >"$CONSUMER_CALL_LOG"
   set +e
   consumer_out="$(
     env -u MT_SIM_LOCK_DESTINATION -u MT_SIM_LOCK -u MT_SIM_LOCK_UDID \
+      PATH="$CONSUMER_FAKE_BIN:$PATH" \
+      MT_TEST_CONSUMER_CALL_LOG="$CONSUMER_CALL_LOG" \
       MT_RELEASE_GATE_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
       "$consumer" 2>&1
   )"
   consumer_rc=$?
   set -e
   if [ "$consumer_rc" -ne 0 ] &&
-     echo "$consumer_out" | grep -q "MT_SIM_LOCK_DESTINATION is required"; then
+     echo "$consumer_out" | grep -q "MT_SIM_LOCK_DESTINATION is required" &&
+     [ ! -s "$CONSUMER_CALL_LOG" ]; then
     record_ok "$consumer_name ignores the removed public destination"
   else
     record_fail "$consumer_name ignores the removed public destination" \
-      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)'"
+      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)' calls='$(tr '\n' ';' <"$CONSUMER_CALL_LOG")'"
   fi
 done
 
 for consumer in "${consumer_scripts[@]}"; do
   consumer_name="$(basename "$consumer")"
+  : >"$CONSUMER_CALL_LOG"
   set +e
   consumer_out="$(
     env -u MT_RELEASE_GATE_DESTINATION -u MT_SIM_LOCK -u MT_SIM_LOCK_UDID \
+      PATH="$CONSUMER_FAKE_BIN:$PATH" \
+      MT_TEST_CONSUMER_CALL_LOG="$CONSUMER_CALL_LOG" \
       MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
       MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-consumer-contract \
       "$consumer" 2>&1
@@ -266,35 +296,14 @@ for consumer in "${consumer_scripts[@]}"; do
   set -e
   if [ "$consumer_rc" -ne 0 ] &&
      echo "$consumer_out" | grep -q \
-       "invoke through scripts/sim-lock.sh --seat <seat>"; then
+       "invoke through scripts/sim-lock.sh --seat <seat>" &&
+     [ ! -s "$CONSUMER_CALL_LOG" ]; then
     record_ok "$consumer_name rejects an unowned simulator destination"
   else
     record_fail "$consumer_name rejects an unowned simulator destination" \
-      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)'"
+      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)' calls='$(tr '\n' ';' <"$CONSUMER_CALL_LOG")'"
   fi
 done
-
-CONSUMER_FAKE_BIN="$TMP/consumer-fake-bin"
-CONSUMER_CALL_LOG="$TMP/consumer-calls.log"
-mkdir -p "$CONSUMER_FAKE_BIN"
-# shellcheck disable=SC2016 # Expanded when the fake xcrun program runs.
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'printf "xcrun:%s\n" "$*" >>"$MT_TEST_CONSUMER_CALL_LOG"' \
-  'if [ "$*" = "simctl bootstatus $MT_SIM_LOCK_UDID -b" ]; then exit 0; fi' \
-  'exit 97' \
-  >"$CONSUMER_FAKE_BIN/xcrun"
-# shellcheck disable=SC2016 # Expanded when the fake xcodebuild program runs.
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'if [ "${1:-}" = "-version" ]; then' \
-  '  printf "Xcode 26.6\nBuild version 17F113\n"' \
-  '  exit 0' \
-  'fi' \
-  'printf "xcodebuild:%s\n" "$*" >>"$MT_TEST_CONSUMER_CALL_LOG"' \
-  'exit 97' \
-  >"$CONSUMER_FAKE_BIN/xcodebuild"
-chmod +x "$CONSUMER_FAKE_BIN/xcrun" "$CONSUMER_FAKE_BIN/xcodebuild"
 
 for consumer in "${consumer_scripts[@]}"; do
   consumer_name="$(basename "$consumer")"
@@ -309,13 +318,38 @@ for consumer in "${consumer_scripts[@]}"; do
     "$consumer" >/dev/null 2>&1
   consumer_rc=$?
   set -e
-  first_simctl_call="$(grep '^xcrun:simctl ' "$CONSUMER_CALL_LOG" | head -1 || true)"
+  first_simctl_call="$(grep '^xcrun:' "$CONSUMER_CALL_LOG" | head -1 || true)"
   if [ "$consumer_rc" -eq 97 ] &&
-     [ "$first_simctl_call" = "xcrun:simctl bootstatus $FAKE_UDID -b" ]; then
+     [ "$first_simctl_call" = "xcrun:<simctl><bootstatus><$FAKE_UDID><-b>" ]; then
     record_ok "$consumer_name boots its locked seat before simulator use"
   else
     record_fail "$consumer_name boots its locked seat before simulator use" \
       "status=$consumer_rc first_simctl='$first_simctl_call' calls='$(tr '\n' ';' <"$CONSUMER_CALL_LOG")'"
+  fi
+done
+
+for consumer in "${consumer_scripts[@]}"; do
+  consumer_name="$(basename "$consumer")"
+  : >"$CONSUMER_CALL_LOG"
+  set +e
+  consumer_out="$(
+    PATH="$CONSUMER_FAKE_BIN:$PATH" \
+      MT_TEST_CONSUMER_CALL_LOG="$CONSUMER_CALL_LOG" \
+      MT_SIM_LOCK=1 \
+      MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+      MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
+      MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-consumer-contract \
+      "$consumer" 2>&1
+  )"
+  consumer_rc=$?
+  set -e
+  if [ "$consumer_rc" -ne 0 ] &&
+     echo "$consumer_out" | grep -q "simulator lock does not match destination" &&
+     [ ! -s "$CONSUMER_CALL_LOG" ]; then
+    record_ok "$consumer_name rejects a mismatched lock before external calls"
+  else
+    record_fail "$consumer_name rejects a mismatched lock before external calls" \
+      "status=$consumer_rc output='$(echo "$consumer_out" | head -1)' calls='$(tr '\n' ';' <"$CONSUMER_CALL_LOG")'"
   fi
 done
 
