@@ -49,6 +49,8 @@ simulator_udid="${destination_after_id%%,*}"
   exit 1
 }
 
+xcrun simctl bootstatus "$simulator_udid" -b
+
 cd "$ROOT"
 
 xcodebuild test \

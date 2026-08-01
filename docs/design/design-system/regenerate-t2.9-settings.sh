@@ -36,6 +36,8 @@ actual_xcode_version="$(xcodebuild -version)"
   exit 1
 }
 
+xcrun simctl bootstatus "$simulator_udid" -b
+
 only_testing_file="$(mktemp /private/tmp/t2.9-settings-only-testing.XXXXXX)"
 cleanup() {
   xcrun simctl status_bar "$simulator_udid" clear >/dev/null 2>&1 || true
