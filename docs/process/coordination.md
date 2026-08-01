@@ -52,6 +52,8 @@ planner runs a loop **~every 30 minutes**: read `tasks.md` and the PR/CI states;
 
 How the fleet operates. These are standing practice, not concessions to circumstance.
 
+- **Fix-now beats carry (Rob, 2026-08-01).** An issue caused by the current wave, or realistically fixable within it, is FIXED in the wave — carrying it forward is the exception and must state why fixing now is genuinely worse (a missing ruling, a structurally absent surface, a dependency that does not exist yet). "No row renders it", "next phase touches that file anyway", and "needs an owner someday" are not justifications; they are the can-kick this rule exists to kill. The backlog trends DOWN toward release, not flat. Verbatim grounds: "i dont want to stay flat, i want the backlog to shrink as we close out issues and move towards release.
+
 - **A builder is woken when work is claimable for them, and stands down when none is.** An idle seat costs nothing; a woken seat with nothing to claim costs a context and produces a nudge cycle. Availability is not a reason to assign.
 - **Briefs are lean and self-contained.** A builder should never need to ask a content question mid-run, and should never have to read past what their task requires to find it. Both failures cost the same thing twice — once in the asking, once in the waiting.
 - **Sequencing avoids known conflict pairs, even at the cost of parallelism.** Two agents editing the same region of a large file will conflict, and the rework costs more than the serialisation saved. Order the work so the conflict cannot arise rather than resolving it afterwards.
