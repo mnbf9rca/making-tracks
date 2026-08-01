@@ -503,7 +503,13 @@ run_focused_capture() {
   mkdir -p "$capture_dir"
   result_bundle="$run_dir/$current_label.xcresult"
   require_safe_result_bundle "$result_bundle"
-  printf '%s\n' "$current_test" > "$only_testing_file"
+  if [ "$current_label" = "default" ]; then
+    printf '%s\n' \
+      MakingTracksTests/AppShellTests/testPlaceCardPressEvidenceStyleDelegatesToRuledProductionStyle \
+      "$current_test" > "$only_testing_file"
+  else
+    printf '%s\n' "$current_test" > "$only_testing_file"
+  fi
 
   capture_loop "$capture_dir" &
   capture_pid=$!

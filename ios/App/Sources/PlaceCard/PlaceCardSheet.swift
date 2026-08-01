@@ -152,6 +152,20 @@ struct PlaceCardActionStyleModifier: ViewModifier {
     }
 }
 
+enum PlaceCardQuietStyleResolver {
+    @MainActor
+    static func style(
+        for action: PlaceCardAction,
+        theme: MaterialTheme
+    ) -> MaterialQuietButtonStyle {
+        if PlaceCardActionAppearance.usesQuietTextPressInset(for: action) {
+            MaterialQuietButtonStyle.textOnly(theme: theme)
+        } else {
+            MaterialQuietButtonStyle(theme: theme)
+        }
+    }
+}
+
 struct PlaceCardActionStyledContent<Content: View>: View {
     let content: Content
     let action: PlaceCardAction
@@ -167,13 +181,12 @@ struct PlaceCardActionStyledContent<Content: View>: View {
         case .tonal:
             content.buttonStyle(MaterialTonalButtonStyle(theme: theme))
         case .quiet:
-            if PlaceCardActionAppearance.usesQuietTextPressInset(for: action) {
-                content.buttonStyle(
-                    MaterialQuietButtonStyle.textOnly(theme: theme)
+            content.buttonStyle(
+                PlaceCardQuietStyleResolver.style(
+                    for: action,
+                    theme: theme
                 )
-            } else {
-                content.buttonStyle(MaterialQuietButtonStyle(theme: theme))
-            }
+            )
         case let .state(foregroundToken, backgroundToken):
             content.buttonStyle(
                 MaterialStateToggleButtonStyle(
@@ -192,7 +205,10 @@ struct PlaceCardPressEvidenceStyle: ButtonStyle {
     let productionStyle: MaterialQuietButtonStyle
 
     init(theme: MaterialTheme = .snow) {
-        productionStyle = .textOnly(theme: theme)
+        productionStyle = PlaceCardQuietStyleResolver.style(
+            for: action,
+            theme: theme
+        )
     }
 
     func makeBody(configuration: Configuration) -> some View {

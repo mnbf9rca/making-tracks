@@ -282,9 +282,19 @@ final class AppShellTests: XCTestCase {
 
     @MainActor
     func testPlaceCardPressEvidenceStyleDelegatesToRuledProductionStyle() {
+        let routedStyle = PlaceCardQuietStyleResolver.style(
+            for: .hide,
+            theme: .snow
+        )
         let style = PlaceCardPressEvidenceStyle(theme: .snow)
 
+        XCTAssertEqual(routedStyle.pressFeedback, .textInset(points: 1))
         XCTAssertEqual(style.productionStyle.pressFeedback, .textInset(points: 1))
+        XCTAssertEqual(
+            style.productionStyle.pressFeedback,
+            routedStyle.pressFeedback,
+            "The evidence wrapper and production Hide route must consume one quiet-style resolver."
+        )
         XCTAssertEqual(style.action, .hide)
 
         let mountedStyles = descendants(
