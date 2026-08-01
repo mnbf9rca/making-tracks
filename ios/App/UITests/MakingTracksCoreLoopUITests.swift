@@ -13,6 +13,17 @@ private struct AXExistenceMatch: Equatable {
     var observedExists: Bool
 }
 
+private struct AXFocusAcquisitionMatch: Equatable {
+    let matched: Bool
+    let attempts: Int
+}
+
+private struct RenderedDifferenceMatch: Equatable {
+    let matched: Bool
+    let observed: Int?
+    let attempts: Int
+}
+
 private struct AXStubElement {
     var exists: Bool
     var label: String
@@ -443,6 +454,60 @@ private enum AXExistenceWaiter {
 
         let attempts = max(1, Int(ceil(timeout / interval)))
         return confirmContinuousAbsence(attempts: attempts, interval: interval, exists: exists)
+    }
+}
+
+private enum AXFocusAcquirer {
+    static func acquire(
+        maxAttempts: Int,
+        interval: TimeInterval = 0,
+        isFocused: () -> Bool,
+        requestFocus: () -> Void
+    ) -> AXFocusAcquisitionMatch {
+        precondition(maxAttempts > 0, "AX focus acquisition must make at least one attempt")
+
+        var attempts = 0
+        var focused = isFocused()
+        while !focused, attempts < maxAttempts {
+            requestFocus()
+            attempts += 1
+            focused = isFocused()
+            if !focused, interval > 0, attempts < maxAttempts {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return AXFocusAcquisitionMatch(matched: focused, attempts: attempts)
+    }
+}
+
+private enum RenderedDifferenceWaiter {
+    static func wait(
+        exceeding threshold: Int,
+        attempts: Int,
+        interval: TimeInterval = 0,
+        sample: () -> Int?
+    ) -> RenderedDifferenceMatch {
+        precondition(attempts > 0, "rendered difference wait must make at least one sample")
+
+        var observed: Int?
+        for attempt in 1...attempts {
+            observed = sample()
+            if let observed, observed > threshold {
+                return RenderedDifferenceMatch(
+                    matched: true,
+                    observed: observed,
+                    attempts: attempt
+                )
+            }
+            if interval > 0, attempt < attempts {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return RenderedDifferenceMatch(
+            matched: false,
+            observed: observed,
+            attempts: attempts
+        )
     }
 }
 
@@ -1026,6 +1091,77 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(result.matched)
         XCTAssertEqual(result.observed, "source applied features:24 layer:true")
         XCTAssertTrue(samples.isEmpty)
+    }
+
+    func testAXFocusAcquirerSkipsRequestWhenAlreadyFocused() {
+        var requests = 0
+        let result = AXFocusAcquirer.acquire(
+            maxAttempts: 3,
+            interval: 0,
+            isFocused: { true },
+            requestFocus: { requests += 1 }
+        )
+
+        XCTAssertEqual(result, AXFocusAcquisitionMatch(matched: true, attempts: 0))
+        XCTAssertEqual(requests, 0)
+    }
+
+    func testAXFocusAcquirerReacquiresWithinBound() {
+        var samples = [false, false, true]
+        var requests = 0
+        let result = AXFocusAcquirer.acquire(
+            maxAttempts: 3,
+            interval: 0,
+            isFocused: { samples.removeFirst() },
+            requestFocus: { requests += 1 }
+        )
+
+        XCTAssertEqual(result, AXFocusAcquisitionMatch(matched: true, attempts: 2))
+        XCTAssertEqual(requests, 2)
+    }
+
+    func testAXFocusAcquirerReportsExhaustedBound() {
+        var samples = [false, false, false, false]
+        var requests = 0
+        let result = AXFocusAcquirer.acquire(
+            maxAttempts: 3,
+            interval: 0,
+            isFocused: { samples.removeFirst() },
+            requestFocus: { requests += 1 }
+        )
+
+        XCTAssertEqual(result, AXFocusAcquisitionMatch(matched: false, attempts: 3))
+        XCTAssertEqual(requests, 3)
+    }
+
+    func testRenderedDifferenceWaiterWaitsForValueAboveThreshold() {
+        var samples: [Int?] = [nil, 100, 101]
+        let result = RenderedDifferenceWaiter.wait(
+            exceeding: 100,
+            attempts: 3,
+            interval: 0,
+            sample: { samples.removeFirst() }
+        )
+
+        XCTAssertEqual(
+            result,
+            RenderedDifferenceMatch(matched: true, observed: 101, attempts: 3)
+        )
+    }
+
+    func testRenderedDifferenceWaiterReportsExhaustedBound() {
+        var samples: [Int?] = [nil, 0, 100]
+        let result = RenderedDifferenceWaiter.wait(
+            exceeding: 100,
+            attempts: 3,
+            interval: 0,
+            sample: { samples.removeFirst() }
+        )
+
+        XCTAssertEqual(
+            result,
+            RenderedDifferenceMatch(matched: false, observed: 100, attempts: 3)
+        )
     }
 
     func testAXExistenceWaiterWaitsThroughTransientPresence() {
