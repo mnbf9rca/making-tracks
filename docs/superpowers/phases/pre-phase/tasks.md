@@ -76,3 +76,8 @@ named trigger is not a state; reviewer's sweep wrote triggers into every bucket-
 
 **Needs Rob (relayed 2026-08-01):** #477 Search scope · #378 welcome-flow order · #448 privacy
 policy/diagnostics · #360 coverage-boundary affordance.
+
+- 2026-08-01T08:25Z codex3 #594 claimed — `fix-594-door-pill-spec`; docs-only door-pill metric/provenance amendment resolving Phase 2 OF3
+- 2026-08-01T08:26Z codex3 #594 branch — `fix-594-door-pill-spec` based on fresh `ios` head `da5ce2b`
+- 2026-08-01T08:29Z codex3 #594 tests green — ruled provenance phrase appears exactly once; metric is 15×15 (`IconRole.inline`); OF3 active carry discharged; no frozen-render diff; agent-law lint clean
+- 2026-08-01T08:41Z codex3 #594 PR open — draft #599; Sourcery and independent spec-fidelity review requested
