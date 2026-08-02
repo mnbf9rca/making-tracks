@@ -1,0 +1,117 @@
+Making Tracks Explore destination-row press pulse
+evidence-class: Nondeterministic content
+pressed-state provenance: latched from live press edge
+git: b31cb886f95db6c757e259f1d2380781c4acc55c
+git-dirty: false
+destination: platform=iOS Simulator,id=8749271C-95FD-4270-A754-401F77E7AEB6
+capture-start: 2026-08-02T03:42:41Z
+capture-end: 2026-08-02T03:46:21Z
+focused-ui-tests: 4 passed, 0 failed
+interaction: 100 XCUIElement.tap() calls per case; press(forDuration:) excluded
+capture-tool: Xcode 26.6
+capture-tool: Build version 17F113
+
+2ef4f261c30e7ddb869222b23f6d9f3a73a684c7d37438ee0e3ccbe83751653a  explore-row-press-about-ax-pressed.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-about-ax-pressed.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+0556a9db3294f19d5763bb713e3d25048450607f203ff0f90bb7934e290d5456  explore-row-press-about-ax-rest.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-about-ax-rest.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+d88b7c3c4917cacaccac6e99f3e15780557c42a509f83277b055811481a6bec9  explore-row-press-about-default-pressed.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-about-default-pressed.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+84a879dff6d1c2c05f0a71558b07f141282700dcf29f522016a54e0d2ec99444  explore-row-press-about-default-rest.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-about-default-rest.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+353661d461f7d1031d1e094510edefd6a773bcbdda28957686969ad8d35d1a6a  explore-row-press-settings-ax-pressed.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-settings-ax-pressed.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+6235b6eaca5cbf98fb0b1614f5a99a9685b41c275fd17b0119436796b76bf21c  explore-row-press-settings-ax-rest.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-settings-ax-rest.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+679d196bf3d97c0b02610d9b1a13d938c18c5edf63ee5bf1c47b7ce886eda3f0  explore-row-press-settings-default-pressed.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-settings-default-pressed.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+11eb9f2d1f9f8b44a368afe8965f4446f46cb29fb9b31fbac2a0ce562feefa6e  explore-row-press-settings-default-rest.png
+  /private/tmp/explore-row-press.9iriNw/staging/explore-row-press-settings-default-rest.png
+    pixelWidth: 1206
+    pixelHeight: 2622
+715d6e8e22e985fd4771c86722873d0ac08e555e529e322ecd8d38c108903453  explore-row-press-about-ax.txt
+  case: about-ax
+  evidence-class: Nondeterministic content
+  pressed-state provenance: latched from live press edge
+  observed-live-press-edges: 100
+  app-frame: x=0 y=0 width=402 height=874
+  row-frame: x=16 y=273 width=370 height=250
+  icon-frame: x=48 y=371 width=44 height=55
+  rest-candidate: candidate-0000.png
+  rest-marker-pixels: 5184
+  rest-ink-pixels: 10574
+  rest-ink-bounds: x=4 y=12 width=132 height=166
+  pressed-candidate: candidate-0001.png
+  pressed-marker-pixels: 5184
+  pressed-ink-pixels: 11501
+  pressed-ink-bounds: x=12 y=13 width=132 height=165
+  pressed-minus-rest-ink: 927
+  identical-glyph-crop: false
+daea59888fea045a41835d836adf007c92178b517085cb1670ea55acc645a67a  explore-row-press-about-default.txt
+  case: about-default
+  evidence-class: Nondeterministic content
+  pressed-state provenance: latched from live press edge
+  observed-live-press-edges: 100
+  app-frame: x=0 y=0 width=402 height=874
+  row-frame: x=16 y=397 width=370 height=76
+  icon-frame: x=40 y=426 width=15 height=19
+  rest-candidate: candidate-0000.png
+  rest-marker-pixels: 5184
+  rest-ink-pixels: 1326
+  rest-ink-bounds: x=3 y=13 width=46 height=57
+  pressed-candidate: candidate-0001.png
+  pressed-marker-pixels: 5184
+  pressed-ink-pixels: 1459
+  pressed-ink-bounds: x=12 y=13 width=46 height=57
+  pressed-minus-rest-ink: 133
+  identical-glyph-crop: false
+972193818af055dec85456a52a46f427dff6be98a98a07c6ff9ad79ea2cc642b  explore-row-press-settings-ax.txt
+  case: settings-ax
+  evidence-class: Nondeterministic content
+  pressed-state provenance: latched from live press edge
+  observed-live-press-edges: 100
+  app-frame: x=0 y=0 width=402 height=874
+  row-frame: x=16 y=247 width=370 height=302
+  icon-frame: x=42 y=371 width=55 height=55
+  rest-candidate: candidate-0000.png
+  rest-marker-pixels: 5184
+  rest-ink-pixels: 10810
+  rest-ink-bounds: x=4 y=12 width=167 height=167
+  pressed-candidate: candidate-0001.png
+  pressed-marker-pixels: 5184
+  pressed-ink-pixels: 11395
+  pressed-ink-bounds: x=12 y=13 width=166 height=166
+  pressed-minus-rest-ink: 585
+  identical-glyph-crop: false
+eed6d2397d3cc2ada8d1441604d6a9c6f2e79d9f11497591d0390dbfc056db6a  explore-row-press-settings-default.txt
+  case: settings-default
+  evidence-class: Nondeterministic content
+  pressed-state provenance: latched from live press edge
+  observed-live-press-edges: 100
+  app-frame: x=0 y=0 width=402 height=874
+  row-frame: x=16 y=397 width=370 height=76
+  icon-frame: x=38 y=426 width=19 height=19
+  rest-candidate: candidate-0000.png
+  rest-marker-pixels: 5184
+  rest-ink-pixels: 1433
+  rest-ink-bounds: x=2 y=12 width=58 height=58
+  pressed-candidate: candidate-0001.png
+  pressed-marker-pixels: 5184
+  pressed-ink-pixels: 1497
+  pressed-ink-bounds: x=12 y=12 width=57 height=58
+  pressed-minus-rest-ink: 64
+  identical-glyph-crop: false

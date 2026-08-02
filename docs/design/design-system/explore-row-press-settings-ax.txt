@@ -1,0 +1,17 @@
+case: settings-ax
+evidence-class: Nondeterministic content
+pressed-state provenance: latched from live press edge
+observed-live-press-edges: 100
+app-frame: x=0 y=0 width=402 height=874
+row-frame: x=16 y=247 width=370 height=302
+icon-frame: x=42 y=371 width=55 height=55
+rest-candidate: candidate-0000.png
+rest-marker-pixels: 5184
+rest-ink-pixels: 10810
+rest-ink-bounds: x=4 y=12 width=167 height=167
+pressed-candidate: candidate-0001.png
+pressed-marker-pixels: 5184
+pressed-ink-pixels: 11395
+pressed-ink-bounds: x=12 y=13 width=166 height=166
+pressed-minus-rest-ink: 585
+identical-glyph-crop: false

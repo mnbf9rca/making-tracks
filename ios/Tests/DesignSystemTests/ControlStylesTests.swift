@@ -100,6 +100,8 @@ final class ControlStylesTests: XCTestCase {
         }
         XCTAssertEqual(quiet.symbolWeight(isPressed: false), .standard)
         XCTAssertEqual(quiet.symbolWeight(isPressed: true), .emphasized)
+        XCTAssertEqual(MaterialControlSymbolWeight.standard.swiftUI, .medium)
+        XCTAssertEqual(MaterialControlSymbolWeight.emphasized.swiftUI, .semibold)
         XCTAssertEqual(quietText.symbolWeight(isPressed: false), .standard)
         XCTAssertEqual(quietText.symbolWeight(isPressed: true), .standard)
         XCTAssertEqual(
@@ -117,6 +119,46 @@ final class ControlStylesTests: XCTestCase {
                 scaledTextInsetPoints: 3
             ),
             0
+        )
+    }
+
+    func testQuietRowStyleDelegatesToRatifiedPressFeedback() {
+        XCTAssertEqual(
+            MaterialQuietRowButtonStyle().pressFeedback,
+            .symbolWeightPulse
+        )
+    }
+
+    func testQuietRowStyleUsesLivePressUnlessEvidenceHasLatched() {
+        XCTAssertFalse(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: false,
+                evidenceIsLatched: nil
+            )
+        )
+        XCTAssertTrue(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: true,
+                evidenceIsLatched: nil
+            )
+        )
+        XCTAssertFalse(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: false,
+                evidenceIsLatched: false
+            )
+        )
+        XCTAssertTrue(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: true,
+                evidenceIsLatched: false
+            )
+        )
+        XCTAssertTrue(
+            MaterialQuietRowButtonStyle.effectiveIsPressed(
+                liveIsPressed: false,
+                evidenceIsLatched: true
+            )
         )
     }
 
