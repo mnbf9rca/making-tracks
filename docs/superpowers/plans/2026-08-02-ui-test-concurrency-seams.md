@@ -1,8 +1,8 @@
 # UI-Test Concurrency Seams Implementation Plan
 
-**Goal:** Remove the two UI-test harness races that block trustworthy simulator-concurrency measurement.
+**Goal:** Remove the UI-test harness races and sibling blind waits that block trustworthy simulator-concurrency measurement.
 
-**Architecture:** Keep both policies in `MakingTracksCoreLoopUITests.swift` as pure helpers with thin XCUI/environment adapters. Scope all artifacts by simulator identity when available, and give the custom-list row a bounded condition-driven scroll with diagnostic state.
+**Architecture:** Keep the harness policies in `MakingTracksCoreLoopUITests.swift` as pure helpers with thin XCUI/environment adapters. Scope all artifacts by simulator identity when available, and route list acquisition and fixture opening through bounded condition-driven observations with diagnostic state.
 
 ## Constraints
 
@@ -13,7 +13,7 @@
 
 ### Task 1: Prove helper contracts RED
 
-- Add artifact-selector tests for distinct simulator IDs and nil/empty fallback.
+- Add artifact-selector tests for distinct simulator IDs, nil/empty/whitespace fallback, and environment precedence.
 - Add scroll-policy tests for zero-action success, bounded success, and exact exhaustion with final state.
 - Run only those tests through the codex3 simulator wrapper and record the expected missing-symbol build failure.
 
@@ -27,7 +27,9 @@
 
 - Replace `uiTestArtifactDirectory(for:)` prefix policy with the selector and environment identity precedence.
 - Route the custom-list root row through the bounded helper with a ten-scroll limit.
+- Route generic existence scrolling through the same bounded helper while preserving its five-scroll contract.
 - On exhaustion, report the row predicate, bound, final observation, and #600 cap-2 context.
+- Make the primary fixture opener wait for reset state and its stable accessibility pin, then boundedly reposition the map only while AX fixture chrome obscures that pin; retain one repeated pre-fix morphology result as RED evidence.
 - Run focused custom-list and place-card morphology tests.
 
 ### Task 4: Verify teeth and full behavior

@@ -563,6 +563,7 @@ private enum UITestArtifactDirectorySelector {
     private static let fallbackPath = "/private/tmp/making-tracks-artifacts"
 
     static func directory(simulatorID: String?) -> URL {
+        let simulatorID = simulatorID?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let simulatorID, !simulatorID.isEmpty else {
             return URL(fileURLWithPath: fallbackPath, isDirectory: true)
         }
@@ -570,6 +571,16 @@ private enum UITestArtifactDirectorySelector {
             fileURLWithPath: "\(fallbackPath).\(simulatorID)",
             isDirectory: true
         )
+    }
+
+    static func directory(environment: [String: String]) -> URL {
+        let simulatorID = ["SIMULATOR_UDID", "MT_SIM_LOCK_UDID"].lazy.compactMap { key in
+            environment[key].flatMap { rawValue in
+                let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                return value.isEmpty ? nil : value
+            }
+        }.first
+        return directory(simulatorID: simulatorID)
     }
 }
 
@@ -1269,6 +1280,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertEqual(UITestArtifactDirectorySelector.directory(simulatorID: nil), fallback)
         XCTAssertEqual(UITestArtifactDirectorySelector.directory(simulatorID: ""), fallback)
+        XCTAssertEqual(UITestArtifactDirectorySelector.directory(simulatorID: " \n"), fallback)
+    }
+
+    func testUITestArtifactDirectorySelectorPrefersXcodeSimulatorIdentity() {
+        let directory = UITestArtifactDirectorySelector.directory(environment: [
+            "SIMULATOR_UDID": "xcode-simulator",
+            "MT_SIM_LOCK_UDID": "wrapper-simulator",
+        ])
+
+        XCTAssertEqual(directory.path, "/private/tmp/making-tracks-artifacts.xcode-simulator")
     }
 
     func testAXBoundedScrollerSkipsScrollWhenAlreadyHittable() {
@@ -4057,7 +4078,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
         app.buttons["Close"].tap()
 
-        openFixtureCard(in: map, app: app)
+        openFixtureCard(in: map, app: app, expectedHidden: true)
         XCTAssertTrue(app.buttons["place-card.unhide"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["place-card.hide"].exists)
 
@@ -5135,7 +5156,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 tapSwitch(in: app, identifier: showHidden, expectedValue: "1")
                 app.buttons["Close"].tap()
             }
-            openFixtureCard(in: map, app: app)
+            openFixtureCard(
+                in: map,
+                app: app,
+                expectedHidden: configuration.hidden
+            )
 
             let sheet = app.scrollViews.matching(
                 identifierPrefix: "place-card.instance."
@@ -6772,8 +6797,57 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         return false
     }
 
-    private func openFixtureCard(in map: XCUIElement, app: XCUIApplication) {
-        openCard(named: "Ghost Sign", in: map, app: app, tap: tapFixturePin)
+    private func openFixtureCard(
+        in map: XCUIElement,
+        app: XCUIApplication,
+        expectedHidden: Bool = false
+    ) {
+        let title = app.staticTexts["Ghost Sign"]
+        let pin = app.buttons["map.pin.\(placeID)"]
+
+        guard waitForFixtureHidden(expectedHidden, in: app) else {
+            XCTFail(
+                "Fixture reset did not reach hidden=\(expectedHidden) before opening map.pin.\(placeID)"
+            )
+            return
+        }
+
+        var observationTimeout: TimeInterval = 2
+        let match = AXBoundedScroller.acquire(
+            maxScrolls: 3,
+            observe: {
+                guard pin.waitForExistence(timeout: observationTimeout) else {
+                    return .missing
+                }
+                return pin.isHittable ? .hittable : .presentNotHittable
+            },
+            scroll: {
+                let start = map.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.08, dy: 0.58)
+                )
+                let end = map.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.08, dy: 0.25)
+                )
+                start.press(forDuration: 0.1, thenDragTo: end)
+                observationTimeout = 1
+            }
+        )
+        guard match.matched else {
+            XCTFail(
+                "Fixture accessibility pin map.pin.\(placeID) was not hittable after "
+                    + "\(match.scrolls) bounded map repositions; final=\(match.observation), "
+                    + "exists=\(pin.exists), frame=\(pin.frame), mapFrame=\(map.frame)"
+            )
+            return
+        }
+
+        pin.tap()
+        XCTAssertTrue(
+            title.waitForExistence(timeout: 5),
+            "Fixture accessibility pin map.pin.\(placeID) did not open Ghost Sign; "
+                + "exists=\(pin.exists), hittable=\(pin.isHittable), label=\(pin.label), "
+                + "pinFrame=\(pin.frame), repositions=\(match.scrolls)"
+        )
     }
 
     private func openSecondFixtureCard(in map: XCUIElement, app: XCUIApplication) {
@@ -7586,27 +7660,24 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     private func uiTestArtifactDirectory(for _: String) -> URL {
-        let environment = ProcessInfo.processInfo.environment
-        let simulatorID = ["SIMULATOR_UDID", "MT_SIM_LOCK_UDID"].lazy.compactMap { key in
-            environment[key].flatMap { $0.isEmpty ? nil : $0 }
-        }.first
-        return UITestArtifactDirectorySelector.directory(simulatorID: simulatorID)
+        UITestArtifactDirectorySelector.directory(
+            environment: ProcessInfo.processInfo.environment
+        )
     }
 
     @discardableResult
     private func scrollToExistence(of element: XCUIElement, in app: XCUIApplication) -> Bool {
-        if element.waitForExistence(timeout: 2) {
-            return true
-        }
-
-        for _ in 0..<5 {
-            scrollTarget(in: app).swipeUp()
-            if element.waitForExistence(timeout: 1) {
-                return true
+        var observationTimeout: TimeInterval = 2
+        return AXBoundedScroller.acquire(
+            maxScrolls: 5,
+            observe: {
+                element.waitForExistence(timeout: observationTimeout) ? .hittable : .missing
+            },
+            scroll: {
+                scrollTarget(in: app).swipeUp()
+                observationTimeout = 1
             }
-        }
-
-        return element.exists
+        ).matched
     }
 
     @discardableResult
