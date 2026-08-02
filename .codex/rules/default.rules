@@ -22,12 +22,15 @@ for pattern in [
         justification = "Use /Users/rob/.local/bin/making-tracks-vps",
     )
 
-# Linked worktrees resolve .git to protected shared metadata. Fetch must run
-# outside the sandbox so Git can update its per-worktree state.
+# Linked worktrees resolve .git to protected shared metadata. Fetch the two
+# long-lived targets outside the sandbox, while keeping arbitrary refspecs
+# approval-bound because rules constrain commands rather than repository paths.
+target_branches = ["develop", "ios"]
+
 prefix_rule(
-    pattern = ["git", "fetch", "origin"],
+    pattern = ["git", "fetch", "origin", target_branches],
     decision = "allow",
-    justification = "Fetch Making Tracks refs from origin in isolated worktrees",
+    justification = "Fetch an approved Making Tracks target branch from origin",
     match = [
         "git fetch origin ios",
         "git fetch origin develop",
@@ -35,6 +38,10 @@ prefix_rule(
     not_match = [
         "git fetch upstream ios",
         "git fetch --all",
+        "git fetch origin",
+        "git fetch origin --all",
+        "git fetch origin main",
+        "git fetch origin +refs/heads/ios:refs/heads/ios",
         "git push origin ios",
     ],
 )
