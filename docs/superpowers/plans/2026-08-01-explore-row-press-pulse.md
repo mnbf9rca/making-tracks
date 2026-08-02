@@ -83,16 +83,23 @@ loop and fail-closed analyzer produce measured rest/pressed evidence.
 
 - [x] Run Bash syntax, ShellCheck, `git diff --check`, and analyzer self-tests.
 - [x] Run `swift test --package-path ios` and record exact counts.
-- [ ] Run `./scripts/sim-lock.sh --seat codex1 ./scripts/release-gate.sh`; record Release/Debug,
-      app-unit, and UI counts with zero warnings/failures; delete task xcresults and leave the seat
-      FREE.
+- [x] Run `./scripts/sim-lock.sh --seat codex1 ./scripts/release-gate.sh`; at gate-tested head
+      `e2df6a87c99520a9613ce208972d48e63da27f86`, Release and Debug build-for-testing passed,
+      app unit passed 251/251, UI passed 112/112, and the result passed 363/363 with zero
+      failures, skips, expected failures, retries, or warnings-as-errors. The test phase took
+      3,020s; the #602 Snow path passed in 63.911s. The Release binary contained none of
+      `materialQuietRowPressEvidenceLatch`, `PressEvidence`, or `EvidenceLatch`; the task result
+      bundle was removed after count extraction and seat `codex1` was verified FREE.
 - [x] Run the required independent script/evidence, test-quality, and integration reviews. The
       three lenses raised 7 unique findings (4 Important, 3 Minor); all 7 were fixed, 0 survived,
       and all three re-reviews found 0 new Critical or Important issues. Cross-examination rejected
       only an attempted whole-raster semibold oracle because the ratified press family also scales;
       the exact medium-to-semibold mapping remains pinned directly.
-- [ ] Rebase on the latest `origin/ios`; manually reconcile unique #575 fixture changes if present;
-      rerun affected gates.
+- [x] Rebase on `origin/ios` `429e51f50a9dbed2221f6fa366ada9dba4e7c18f`; preserve #575's
+      fixture and #602's focus/appearance hardening while reconciling the shared fixture routing,
+      regenerate all #595 evidence, and rerun the package and host gates. The refreshed packet's
+      eight PNGs and four measurement reports remained byte-identical; only provenance metadata
+      changed to the rebased source head and capture interval.
 
 ## Task 6 — publish and hand off
 
