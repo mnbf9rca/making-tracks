@@ -22,6 +22,23 @@ for pattern in [
         justification = "Use /Users/rob/.local/bin/making-tracks-vps",
     )
 
+# Linked worktrees resolve .git to protected shared metadata. Fetch must run
+# outside the sandbox so Git can update its per-worktree state.
+prefix_rule(
+    pattern = ["git", "fetch", "origin"],
+    decision = "allow",
+    justification = "Fetch Making Tracks refs from origin in isolated worktrees",
+    match = [
+        "git fetch origin ios",
+        "git fetch origin develop",
+    ],
+    not_match = [
+        "git fetch upstream ios",
+        "git fetch --all",
+        "git push origin ios",
+    ],
+)
+
 # The designated simulators have one entry point. The stable logical seat is
 # bounded here; sim-lock resolves its mutable destination from the gate ledger.
 # Erase remains approval-bound because it is destructive.
