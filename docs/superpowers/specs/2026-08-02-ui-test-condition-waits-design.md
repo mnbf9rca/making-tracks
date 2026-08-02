@@ -1,7 +1,7 @@
 # UI-Test Condition Waits Design
 
-**Issue:** #602  
-**Prerequisite for:** #600  
+**Issue:** #602
+**Prerequisite for:** #600
 **Scope:** UI-test hardening plus one DEBUG-only app launch-argument seam; no Release product-behaviour change
 
 ## Problem
