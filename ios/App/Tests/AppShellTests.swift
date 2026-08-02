@@ -52,6 +52,33 @@ final class AppShellTests: XCTestCase {
         )
     }
 
+    func testUITestingColorSchemeInjectionRejectsMissingValue() {
+        XCTAssertNil(
+            UITestingColorSchemeInjection.resolve(
+                arguments: [
+                    "MakingTracks",
+                    "--ui-testing-disable-material-mode-lock",
+                    "--ui-testing-color-scheme",
+                ],
+                materialModeLock: .light
+            )
+        )
+    }
+
+    func testUITestingColorSchemeInjectionRejectsUnsupportedValue() {
+        XCTAssertNil(
+            UITestingColorSchemeInjection.resolve(
+                arguments: [
+                    "MakingTracks",
+                    "--ui-testing-disable-material-mode-lock",
+                    "--ui-testing-color-scheme",
+                    "banana",
+                ],
+                materialModeLock: .light
+            )
+        )
+    }
+
     func testAboutLicenceInventoryPreservesEverySoftwareEntry() throws {
         let manifest = try XCTUnwrap(OSSCreditsManifest.load())
         let inventory = AboutLicenceInventory(

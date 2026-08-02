@@ -11,7 +11,8 @@ import UIKit
 // under xcodebuild even though the API reported the requested value (Apple thread
 // 812656: https://developer.apple.com/forums/thread/812656). #602's 40-sample
 // bounded observer and an independent full gate both stayed Light. Remove this
-// injection and restore system-delivered appearance when that XCTest regression is fixed.
+// injection and restore system-delivered appearance when that XCTest regression is fixed;
+// #604 owns the next-Xcode-major re-check and removal.
 enum UITestingColorSchemeInjection {
     static func resolve(
         arguments: [String],
