@@ -11,6 +11,47 @@ import MakingTracksMapStyle
 @testable import MakingTracks
 
 final class AppShellTests: XCTestCase {
+    func testUITestingColorSchemeInjectionKeepsMaterialLockForInjectedDark() {
+        XCTAssertEqual(
+            UITestingColorSchemeInjection.resolve(
+                arguments: [
+                    "MakingTracks",
+                    "--ui-testing-color-scheme",
+                    "dark",
+                ],
+                materialModeLock: .light
+            ),
+            .light
+        )
+    }
+
+    func testUITestingColorSchemeInjectionUsesInjectedDarkWhenLockDisabled() {
+        XCTAssertEqual(
+            UITestingColorSchemeInjection.resolve(
+                arguments: [
+                    "MakingTracks",
+                    "--ui-testing-disable-material-mode-lock",
+                    "--ui-testing-color-scheme",
+                    "dark",
+                ],
+                materialModeLock: .light
+            ),
+            .dark
+        )
+    }
+
+    func testUITestingColorSchemeInjectionLeavesDisabledLockUnpinnedWithoutInjection() {
+        XCTAssertNil(
+            UITestingColorSchemeInjection.resolve(
+                arguments: [
+                    "MakingTracks",
+                    "--ui-testing-disable-material-mode-lock",
+                ],
+                materialModeLock: .light
+            )
+        )
+    }
+
     func testAboutLicenceInventoryPreservesEverySoftwareEntry() throws {
         let manifest = try XCTUnwrap(OSSCreditsManifest.load())
         let inventory = AboutLicenceInventory(

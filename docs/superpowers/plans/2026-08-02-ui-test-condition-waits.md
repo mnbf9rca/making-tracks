@@ -4,18 +4,26 @@
 
 **Goal:** Make both UI-test timing boundaries condition-based and fail-explicit before issue #600 resumes concurrency measurement.
 
-**Architecture:** Keep all behavior inside `MakingTracksCoreLoopUITests.swift`. Two closure-driven algorithms carry deterministic policy and tests; thin XCTest/XCUI adapters supply real focus predicates and screenshot rasters without adding app-source instrumentation.
+**Architecture:** Keep focus and raster policy inside `MakingTracksCoreLoopUITests.swift`. A DEBUG-only app resolver supplies a rendered color-scheme input because Xcode 26's `xcodebuild` appearance delivery is broken; the production material lock remains the higher-precedence value and the Release path contains no injection code.
 
 **Tech Stack:** Swift, XCTest/XCUI, CoreGraphics screenshot rasters, the repository simulator wrapper, and the Release gate.
 
 ## Global Constraints
 
-- Issue #602 is test-only: do not modify app source or product behavior.
+- Issue #602 was originally test-only. On 2026-08-02 the planner authorized one DEBUG-only app-source seam after bounded and independent evidence corroborated Apple thread 812656; Release product behavior must remain unchanged and injection symbols/strings must be absent.
 - Use bounded condition observation; no fixed sleep, unbounded retry, or retry-until-lucky behavior.
 - Keyboard exhaustion must mention concurrent-gate load and `#600 cap-3 rep1`.
 - The raster threshold is strictly greater than 100 pixels; cite the known-good 4,242-pixel minimum beside it.
 - Every simulator command runs through `./scripts/sim-lock.sh --seat codex3`.
 - The final solo gate is also live cap-1/2 telemetry for #600.
+
+## Fix-forward authorization (supersedes conflicting Task 4 details)
+
+- Add resolver tests before implementation: locked + injected Dark resolves Snow Light; unlocked + injected Dark resolves Dark; unlocked without injection resolves nil.
+- Under `#if DEBUG`, parse `--ui-testing-color-scheme light|dark` beside `--ui-testing-disable-material-mode-lock`. The source comment must cite Apple thread 812656, the 40-sample bounded-observer evidence, the 2026-08-02 decision date, and removal when XCTest `xcodebuild` appearance delivery is fixed.
+- Feed all four Snow captures an explicit injected input. Fixed Light/Dark retain the production lock; legacy Light/Dark disable it. Record Dark provenance as INJECTED, not system-delivered.
+- Preserve the bounded raster observer and retained successful screenshot. Remove reliance on `XCUIDevice.shared.appearance` for this oracle.
+- Run the full gate because #602 now bears app code. Build Release and prove the injection type and argument string absent with `nm`/binary inspection, mirroring #595's proof shape.
 
 ---
 
@@ -208,23 +216,40 @@ git push origin HEAD
 
 **Interfaces:**
 - Consumes: `AXFocusAcquirer.acquire(...)`.
-- Produces: `acquireKeyboardFocus(_:maxAttempts:) -> Bool`, used by both text fields before `typeText()`.
+- Produces: `acquireKeyboardFocus(_:in:maxAttempts:) -> Bool`, used by both text fields before `typeText()`.
 
-- [ ] **Step 1: Add the XCUI adapter**
+- [ ] **Step 1: Add the runtime-proxy XCUI adapter**
 
 ```swift
 private func acquireKeyboardFocus(
     _ element: XCUIElement,
+    in app: XCUIApplication,
     maxAttempts: Int = 3,
     file: StaticString = #filePath,
     line: UInt = #line
 ) -> Bool {
-    let predicate = NSPredicate(format: "hasKeyboardFocus == 1")
+    func observeFocus() -> KeyboardFocusObservation {
+        KeyboardFocusProxySelector.observe(
+            softwareKeyboardPresent: app.keyboards.firstMatch.exists,
+            elementFocused: element.hasFocus
+        )
+    }
+
+    var lastObservation = observeFocus()
+    guard !lastObservation.focused else {
+        XCTFail("keyboard focus proxy was already true on the fresh pre-tap field")
+        return false
+    }
+
     let result = AXFocusAcquirer.acquire(
         maxAttempts: maxAttempts,
         interval: 0.1,
         isFocused: {
-            XCTWaiter.wait(
+            let predicate = NSPredicate { _, _ in
+                lastObservation = observeFocus()
+                return lastObservation.focused
+            }
+            return XCTWaiter.wait(
                 for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
                 timeout: 1
             ) == .completed
@@ -233,7 +258,7 @@ private func acquireKeyboardFocus(
     )
     guard result.matched else {
         XCTFail(
-            "keyboard focus not acquired within \(maxAttempts) attempts — known to amplify under concurrent-gate load, see #600 cap-3 rep1",
+            "keyboard focus not acquired within \(maxAttempts) attempts using \(lastObservation.proxy.rawValue) — known to amplify under concurrent-gate load, see #600 cap-3 rep1",
             file: file,
             line: line
         )
@@ -247,11 +272,11 @@ private func acquireKeyboardFocus(
 
 ```swift
 let listPickerName = app.textFields["list-picker.new-name"]
-guard acquireKeyboardFocus(listPickerName) else { return }
+guard acquireKeyboardFocus(listPickerName, in: app) else { return }
 listPickerName.typeText("KL walk")
 
 let rootListField = app.textFields["lists.create.name"]
-guard acquireKeyboardFocus(rootListField) else { return }
+guard acquireKeyboardFocus(rootListField, in: app) else { return }
 rootListField.typeText(rootListName)
 ```
 
@@ -267,53 +292,53 @@ Expected: 1 test passes. `rg 'typeText\('` still finds exactly two calls, and bo
 
 ---
 
-### Task 4: Observe legacy Dark before Snow diffs
+### Task 4: Inject and observe legacy appearance before Snow diffs
 
 **Files:**
+- Modify: `ios/App/Sources/MakingTracksApp.swift`
+- Modify: `ios/App/Tests/AppShellTests.swift`
 - Modify: `ios/App/UITests/MakingTracksCoreLoopUITests.swift:1521-1710`
 - Modify: `ios/App/UITests/MakingTracksCoreLoopUITests.swift:5000-5260`
 - Modify: `ios/App/UITests/MakingTracksCoreLoopUITests.swift:6740-6780`
 
 **Interfaces:**
-- Consumes: the fixed-Dark Appearance `SettingsThemeLockRegionCapture` and `RenderedDifferenceWaiter.wait(...)`.
-- Produces: a legacy-Dark capture whose first retained raster has already exceeded the 100-pixel observation threshold.
+- Consumes: the DEBUG `UITestingColorSchemeInjection`, fixed Light/Dark Appearance captures, and `RenderedDifferenceWaiter.wait(...)`.
+- Produces: explicit injected Light/Dark inputs, a legacy-Light raster matching fixed Light, and a legacy-Dark raster exceeding the 100-pixel difference threshold from fixed Dark.
 
-- [ ] **Step 1: Pass the fixed-Dark Appearance baseline into legacy Dark**
+- [ ] **Step 1: Add the DEBUG-only color-scheme resolver RED/GREEN cycle**
 
-Add `appearanceTransitionBaseline: SettingsThemeLockRegionCapture? = nil` to `captureSnowSettingsThemeLock(...)` and pass `dark.regions["appearance"]` only for the legacy-Dark call.
+Add tests proving that the production material lock wins over injected Dark, that disabling the lock exposes injected Dark, and that disabling the lock without injection remains unpinned. Implement `--ui-testing-color-scheme light|dark` parsing only under `#if DEBUG`, with an explicit unchanged Release path. Record Apple thread 812656, bounded evidence, decision date, and removal condition in the source comment.
 
-- [ ] **Step 2: Resample and retain the first observed legacy-Dark raster**
+- [ ] **Step 2: Capture explicit injected inputs in ruled order**
 
-Inside the nested Appearance `capture`, use 40 samples at 0.25-second intervals. Store the screenshot and raster produced by the successful sample. The threshold comment must read:
+Capture fixed Light first, then legacy Light with `.matches(fixedLightAppearance)`, fixed Dark, and legacy Dark with `.differs(fixedDarkAppearance)`. Fixed captures retain the production Snow lock; legacy captures disable it. Pass `forceDarkAppearance: false` so this oracle has no dependency on the broken `XCUIDevice.shared.appearance` path. Attach kept evidence stating that Dark provenance is INJECTED and the invariant is production pin precedence.
+
+- [ ] **Step 3: Resample and retain the observed legacy rasters**
+
+Inside the nested Appearance `capture`, use 40 samples at 0.25-second intervals. Legacy Light waits for exactly zero differing pixels from fixed Light; legacy Dark waits for more than 100 differing pixels from fixed Dark. Store the screenshot and raster produced by the successful sample. The threshold comment must read:
 
 ```swift
 // The smallest known-good legacy-Dark delta is 4,242 pixels; 100 stays
 // comfortably below a real transition while excluding raster noise.
-let transitionThreshold = 100
 ```
 
-For each sample, decode `XCUIScreen.main.screenshot()` into `RenderedPixelRaster` and call `differingPixelCount(comparedTo:in:tolerance: 0)` against the fixed-Dark baseline. On exhaustion, fail with:
+On legacy-Dark exhaustion, fail with injected provenance, the threshold, and the last observation. Use an `attachScreenshot(_:named:forceExport:)` overload so the successful screenshot becomes the attached/exported frozen evidence; do not take a replacement screenshot after the condition succeeds.
 
-```swift
-"legacy Dark appearance transition was not observed within 40 samples; expected >100 differing pixels, last observed \(result.observed.map(String.init) ?? "missing")"
-```
+- [ ] **Step 4: Run resolver, helper, focus, and Snow integration tests**
 
-Use an `attachScreenshot(_:named:forceExport:)` overload so the successful screenshot becomes the attached/exported frozen evidence; do not take a replacement screenshot after the condition succeeds.
-
-- [ ] **Step 3: Run helper and Snow integration tests**
-
-Run a focused Release gate for the five helper tests plus:
+Run a focused gate for the three resolver tests, focus helper/proxy tests, rendered-difference helper tests, and both complete integrations:
 
 ```text
+MakingTracksUITests/MakingTracksCoreLoopUITests/testCustomListCanBeCreatedBrowsedAndShownOnMap
 MakingTracksUITests/MakingTracksCoreLoopUITests/testSnowSettingsAdaptiveInkIsLegibleAndInvariantAcrossSystemAppearances
 ```
 
-Expected: all six tests pass. Snow fixed Light/Dark remains zero-diff, and the legacy-Dark Appearance transition is greater than 100 before the final oracle loop.
+Expected: 3 app tests and 11 UI tests pass. Snow fixed Light/Dark remains zero-diff, legacy Light matches fixed Light, and the injected legacy-Dark Appearance transition is greater than 100 before the final oracle loop.
 
-- [ ] **Step 4: Commit and push the integrations**
+- [ ] **Step 5: Commit and push the integrations**
 
 ```bash
-git add ios/App/UITests/MakingTracksCoreLoopUITests.swift
+git add ios/App/Sources/MakingTracksApp.swift ios/App/Tests/AppShellTests.swift ios/App/UITests/MakingTracksCoreLoopUITests.swift
 git commit -S -m "Harden UI test focus and appearance waits"
 git push origin HEAD
 ```

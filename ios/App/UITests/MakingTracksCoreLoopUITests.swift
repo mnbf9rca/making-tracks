@@ -18,6 +18,34 @@ private struct AXFocusAcquisitionMatch: Equatable {
     let attempts: Int
 }
 
+private enum KeyboardFocusProxy: String, Equatable {
+    case softwareKeyboardPresence = "software-keyboard presence"
+    case focusedElementQuery = "focused-element query"
+}
+
+private struct KeyboardFocusObservation: Equatable {
+    let focused: Bool
+    let proxy: KeyboardFocusProxy
+}
+
+private enum KeyboardFocusProxySelector {
+    static func observe(
+        softwareKeyboardPresent: Bool,
+        elementFocused: Bool
+    ) -> KeyboardFocusObservation {
+        if softwareKeyboardPresent {
+            return KeyboardFocusObservation(
+                focused: true,
+                proxy: .softwareKeyboardPresence
+            )
+        }
+        return KeyboardFocusObservation(
+            focused: elementFocused,
+            proxy: .focusedElementQuery
+        )
+    }
+}
+
 private struct RenderedDifferenceMatch: Equatable {
     let matched: Bool
     let observed: Int?
@@ -314,6 +342,12 @@ private struct SettingsThemeLockCapture {
     let regions: [String: SettingsThemeLockRegionCapture]
 }
 
+@MainActor
+private enum SettingsAppearanceTarget {
+    case matches(SettingsThemeLockRegionCapture)
+    case differs(SettingsThemeLockRegionCapture)
+}
+
 private enum AXResampler {
     static func matches(
         expected: String,
@@ -493,6 +527,35 @@ private enum RenderedDifferenceWaiter {
         for attempt in 1...attempts {
             observed = sample()
             if let observed, observed > threshold {
+                return RenderedDifferenceMatch(
+                    matched: true,
+                    observed: observed,
+                    attempts: attempt
+                )
+            }
+            if interval > 0, attempt < attempts {
+                RunLoop.current.run(until: Date().addingTimeInterval(interval))
+            }
+        }
+        return RenderedDifferenceMatch(
+            matched: false,
+            observed: observed,
+            attempts: attempts
+        )
+    }
+
+    static func wait(
+        atMost threshold: Int,
+        attempts: Int,
+        interval: TimeInterval = 0,
+        sample: () -> Int?
+    ) -> RenderedDifferenceMatch {
+        precondition(attempts > 0, "rendered difference wait must make at least one sample")
+
+        var observed: Int?
+        for attempt in 1...attempts {
+            observed = sample()
+            if let observed, observed <= threshold {
                 return RenderedDifferenceMatch(
                     matched: true,
                     observed: observed,
@@ -1134,6 +1197,45 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(requests, 3)
     }
 
+    func testKeyboardFocusProxyUsesSoftwareKeyboardWhenPresent() {
+        XCTAssertEqual(
+            KeyboardFocusProxySelector.observe(
+                softwareKeyboardPresent: true,
+                elementFocused: false
+            ),
+            KeyboardFocusObservation(
+                focused: true,
+                proxy: .softwareKeyboardPresence
+            )
+        )
+    }
+
+    func testKeyboardFocusProxyUsesElementFocusWithoutSoftwareKeyboard() {
+        XCTAssertEqual(
+            KeyboardFocusProxySelector.observe(
+                softwareKeyboardPresent: false,
+                elementFocused: true
+            ),
+            KeyboardFocusObservation(
+                focused: true,
+                proxy: .focusedElementQuery
+            )
+        )
+    }
+
+    func testKeyboardFocusProxyRejectsFreshUnfocusedField() {
+        XCTAssertEqual(
+            KeyboardFocusProxySelector.observe(
+                softwareKeyboardPresent: false,
+                elementFocused: false
+            ),
+            KeyboardFocusObservation(
+                focused: false,
+                proxy: .focusedElementQuery
+            )
+        )
+    }
+
     func testRenderedDifferenceWaiterWaitsForValueAboveThreshold() {
         var samples: [Int?] = [nil, 100, 101]
         let result = RenderedDifferenceWaiter.wait(
@@ -1161,6 +1263,21 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(
             result,
             RenderedDifferenceMatch(matched: false, observed: 100, attempts: 3)
+        )
+    }
+
+    func testRenderedDifferenceWaiterWaitsForValueAtMostThreshold() {
+        var samples: [Int?] = [nil, 101, 0]
+        let result = RenderedDifferenceWaiter.wait(
+            atMost: 0,
+            attempts: 3,
+            interval: 0,
+            sample: { samples.removeFirst() }
+        )
+
+        XCTAssertEqual(
+            result,
+            RenderedDifferenceMatch(matched: true, observed: 0, attempts: 3)
         )
     }
 
@@ -1655,23 +1772,34 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
     }
 
     func testSnowSettingsAdaptiveInkIsLegibleAndInvariantAcrossSystemAppearances() throws {
-        let legacyLight = try XCTUnwrap(captureSnowSettingsThemeLock(
-            forceDarkAppearance: false,
-            disableMaterialModeLock: true,
-            appearanceName: "legacy-light"
-        ))
+        let provenance = XCTAttachment(
+            string: "Dark-state provenance: INJECTED through --ui-testing-color-scheme on Xcode 26.6 / iOS 26.5. System-delivered appearance is untestable under xcodebuild due to Apple thread 812656; the invariant under test is that the production Snow pin beats the injected color scheme."
+        )
+        provenance.name = "snow-theme-lock-dark-state-provenance"
+        provenance.lifetime = .keepAlways
+        add(provenance)
+
         let light = try XCTUnwrap(captureSnowSettingsThemeLock(
             forceDarkAppearance: false,
             appearanceName: "light"
+        ))
+        let lightAppearance = try XCTUnwrap(light.regions["appearance"])
+        let legacyLight = try XCTUnwrap(captureSnowSettingsThemeLock(
+            forceDarkAppearance: false,
+            disableMaterialModeLock: true,
+            appearanceName: "legacy-light",
+            appearanceTarget: .matches(lightAppearance)
         ))
         let dark = try XCTUnwrap(captureSnowSettingsThemeLock(
             forceDarkAppearance: true,
             appearanceName: "dark"
         ))
+        let darkAppearance = try XCTUnwrap(dark.regions["appearance"])
         let legacyDark = try XCTUnwrap(captureSnowSettingsThemeLock(
             forceDarkAppearance: true,
             disableMaterialModeLock: true,
-            appearanceName: "legacy-dark"
+            appearanceName: "legacy-dark",
+            appearanceTarget: .differs(darkAppearance)
         ))
 
         let regionNames = [
@@ -1941,8 +2069,9 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let listPickerError = app.staticTexts["list-picker.error"]
         XCTAssertTrue(listPickerError.waitForExistence(timeout: 5))
         XCTAssertEqual(listPickerError.label, "Enter a list name.")
-        app.textFields["list-picker.new-name"].tap()
-        app.textFields["list-picker.new-name"].typeText("KL walk")
+        let listPickerName = app.textFields["list-picker.new-name"]
+        guard acquireKeyboardFocus(listPickerName, in: app) else { return }
+        listPickerName.typeText("KL walk")
         app.buttons["list-picker.create"].tap()
         XCTAssertTrue(app.buttons.matching(identifierPrefix: "list-picker.row.").firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(listPickerError.exists)
@@ -1970,7 +2099,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let rootListName = "Journal root proof"
         let rootListField = app.textFields["lists.create.name"]
-        rootListField.tap()
+        guard acquireKeyboardFocus(rootListField, in: app) else { return }
         rootListField.typeText(rootListName)
         createList.tap()
         XCTAssertTrue(waitForNonExistence(of: listsError, timeout: 5))
@@ -5153,21 +5282,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         forceDarkAppearance: Bool,
         disableMaterialModeLock: Bool = false,
         appearanceName: String,
+        appearanceTarget: SettingsAppearanceTarget? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) -> SettingsThemeLockCapture? {
-        let forcedAppearance: XCUIDevice.Appearance = forceDarkAppearance ? .dark : .light
-        XCUIDevice.shared.appearance = forcedAppearance
-        XCTAssertEqual(XCUIDevice.shared.appearance, forcedAppearance, file: file, line: line)
-        defer { XCUIDevice.shared.appearance = .light }
+        let injectedColorScheme = forceDarkAppearance ? "dark" : "light"
 
         let app = launch(
             reset: true,
             locationDenied: true,
             resetTheme: true,
             theme: "snow",
-            forceDarkAppearance: forceDarkAppearance,
+            forceDarkAppearance: false,
             disableMaterialModeLock: disableMaterialModeLock,
+            uiTestingColorScheme: injectedColorScheme,
             forceTileNetworkOffline: true,
             hideFixtureChrome: true
         )
@@ -5246,19 +5374,93 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
                 return false
             }
 
-            let screenshot = exportsFrozenEvidence
-                ? attachScreenshot(
-                    named: "snow-theme-lock-\(name)-\(appearanceName)",
-                    forceExport: true
-                )
-                : XCUIScreen.main.screenshot()
-            guard let raster = RenderedPixelRaster(screenshot: screenshot, appFrame: appFrame) else {
-                XCTFail(
-                    "Snow theme-lock \(appearanceName) \(name): screenshot could not be decoded",
-                    file: file,
-                    line: line
-                )
-                return false
+            let screenshot: XCUIScreenshot
+            let raster: RenderedPixelRaster
+            if name == "appearance", let appearanceTarget {
+                var observedScreenshot: XCUIScreenshot?
+                var observedRaster: RenderedPixelRaster?
+
+                func sampleDifference(
+                    comparedTo baseline: SettingsThemeLockRegionCapture
+                ) -> Int? {
+                    let candidateScreenshot = XCUIScreen.main.screenshot()
+                    guard let candidateRaster = RenderedPixelRaster(
+                        screenshot: candidateScreenshot,
+                        appFrame: appFrame
+                    ) else {
+                        return nil
+                    }
+                    observedScreenshot = candidateScreenshot
+                    observedRaster = candidateRaster
+                    return candidateRaster.differingPixelCount(
+                        comparedTo: baseline.raster,
+                        in: comparisonFrame,
+                        tolerance: 0
+                    )
+                }
+
+                let transition: RenderedDifferenceMatch
+                let failurePrefix: String
+                switch appearanceTarget {
+                case .matches(let baseline):
+                    transition = RenderedDifferenceWaiter.wait(
+                        atMost: 0,
+                        attempts: 40,
+                        interval: 0.25,
+                        sample: { sampleDifference(comparedTo: baseline) }
+                    )
+                    failurePrefix = "legacy Light appearance target was not observed within 40 samples; expected 0 differing pixels"
+                case .differs(let baseline):
+                    // The smallest known-good legacy-Dark delta is 4,242 pixels; 100 stays
+                    // comfortably below a real transition while excluding raster noise.
+                    transition = RenderedDifferenceWaiter.wait(
+                        exceeding: 100,
+                        attempts: 40,
+                        interval: 0.25,
+                        sample: { sampleDifference(comparedTo: baseline) }
+                    )
+                    failurePrefix = "legacy Dark INJECTED appearance transition was not observed within 40 samples; expected >100 differing pixels"
+                }
+                guard transition.matched,
+                      let observedScreenshot,
+                      let observedRaster
+                else {
+                    let lastObserved = transition.observed.map(String.init) ?? "nil"
+                    XCTFail(
+                        "\(failurePrefix), last observed \(lastObserved)",
+                        file: file,
+                        line: line
+                    )
+                    return false
+                }
+                screenshot = observedScreenshot
+                raster = observedRaster
+                if exportsFrozenEvidence {
+                    attachScreenshot(
+                        screenshot,
+                        named: "snow-theme-lock-\(name)-\(appearanceName)",
+                        forceExport: true
+                    )
+                }
+            } else {
+                screenshot = exportsFrozenEvidence
+                    ? attachScreenshot(
+                        named: "snow-theme-lock-\(name)-\(appearanceName)",
+                        forceExport: true
+                    )
+                    : XCUIScreen.main.screenshot()
+                guard let decodedRaster = RenderedPixelRaster(
+                    screenshot: screenshot,
+                    appFrame: appFrame
+                ) else {
+                    XCTFail(
+                        "Snow theme-lock \(appearanceName) \(name): screenshot could not be decoded",
+                        file: file,
+                        line: line
+                    )
+                    return false
+                }
+                raster = decodedRaster
             }
             regions[name] = SettingsThemeLockRegionCapture(
                 raster: raster,
@@ -5712,6 +5914,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         resetOnboarding: Bool = false,
         forceDarkAppearance: Bool = false,
         disableMaterialModeLock: Bool = false,
+        uiTestingColorScheme: String? = nil,
         forceTileNetworkOffline: Bool = false,
         densePins: Bool = false,
         startupViewport: String? = nil,
@@ -5773,6 +5976,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
         if disableMaterialModeLock {
             app.launchArguments.append("--ui-testing-disable-material-mode-lock")
+        }
+        if let uiTestingColorScheme {
+            app.launchArguments.append("--ui-testing-color-scheme")
+            app.launchArguments.append(uiTestingColorScheme)
         }
         if forceTileNetworkOffline {
             app.launchArguments.append("--debug-force-tile-network-offline")
@@ -6338,6 +6545,66 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.20, dy: 0.30)).tap()
     }
 
+    private func acquireKeyboardFocus(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxAttempts: Int = 3,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> Bool {
+        func observeFocus() -> KeyboardFocusObservation {
+            KeyboardFocusProxySelector.observe(
+                softwareKeyboardPresent: app.keyboards.firstMatch.exists,
+                elementFocused: element.hasFocus
+            )
+        }
+
+        var lastObservation = observeFocus()
+        guard !lastObservation.focused else {
+            XCTFail(
+                "keyboard focus proxy \(lastObservation.proxy.rawValue) was already true on the fresh pre-tap field",
+                file: file,
+                line: line
+            )
+            return false
+        }
+
+        let result = AXFocusAcquirer.acquire(
+            maxAttempts: maxAttempts,
+            interval: 0.1,
+            isFocused: {
+                let predicate = NSPredicate { _, _ in
+                    lastObservation = observeFocus()
+                    return lastObservation.focused
+                }
+                let waitResult = XCTWaiter.wait(
+                    for: [
+                        XCTNSPredicateExpectation(
+                            predicate: predicate,
+                            object: element
+                        ),
+                    ],
+                    timeout: 1
+                )
+                if waitResult == .completed {
+                    return true
+                }
+                lastObservation = observeFocus()
+                return lastObservation.focused
+            },
+            requestFocus: { element.tap() }
+        )
+        guard result.matched else {
+            XCTFail(
+                "keyboard focus not acquired within \(maxAttempts) attempts using \(lastObservation.proxy.rawValue) — known to amplify under concurrent-gate load, see #600 cap-3 rep1",
+                file: file,
+                line: line
+            )
+            return false
+        }
+        return true
+    }
+
     private func tapSwitch(in app: XCUIApplication, identifier: String, expectedValue: String) {
         let switchElement = app.switches[identifier]
         guard scrollToHittable(switchElement, in: app) else {
@@ -6885,12 +7152,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         forceExport: Bool = false
     ) -> XCUIScreenshot {
         let screenshot = XCUIScreen.main.screenshot()
+        attachScreenshot(screenshot, named: name, forceExport: forceExport)
+        return screenshot
+    }
+
+    private func attachScreenshot(
+        _ screenshot: XCUIScreenshot,
+        named name: String,
+        forceExport: Bool = false
+    ) {
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
         exportScreenshot(screenshot, named: name, force: forceExport)
-        return screenshot
     }
 
     private func exportScreenshot(
