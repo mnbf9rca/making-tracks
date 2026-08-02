@@ -373,11 +373,11 @@ Capture Release and Debug build results, exact unit/UI counts, wall time, retry/
 
 Add a `tests green` row for #602 to `docs/superpowers/phases/pre-phase/tasks.md`. Add the solo gate as live cap-1/2 telemetry in the #600 branch record and relay the exact evidence to the planner over AMQ.
 
-- [ ] **Step 4: Run self-review and independent review**
+- [x] **Step 4: Run self-review and independent review**
 
 Review spec fidelity, bounded-wait correctness, failure semantics, test teeth, and threat-model scope. Because subagent delegation is unavailable in this session, request an independent AMQ review and resolve every surviving finding before PR creation.
 
-- [ ] **Step 5: Re-ground and verify the branch**
+- [x] **Step 5: Re-ground and verify the branch**
 
 Fetch `origin/ios`, prove `origin/ios` is an ancestor of `HEAD`, run `git diff --check`, review `git diff --stat origin/ios..HEAD`, verify signed commits and a clean worktree, then push.
 
