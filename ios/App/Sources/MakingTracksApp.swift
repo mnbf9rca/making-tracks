@@ -6,6 +6,38 @@ import MakingTracksMapStyle
 import MakingTracksTiles
 import UIKit
 
+#if DEBUG
+// 2026-08-02: Xcode 26.6 / iOS 26.5 ignored XCUIDevice appearance changes
+// under xcodebuild even though the API reported the requested value (Apple thread
+// 812656: https://developer.apple.com/forums/thread/812656). #602's 40-sample
+// bounded observer and an independent full gate both stayed Light. Remove this
+// injection and restore system-delivered appearance when that XCTest regression is fixed;
+// #604 owns the next-Xcode-major re-check and removal.
+enum UITestingColorSchemeInjection {
+    static func resolve(
+        arguments: [String],
+        materialModeLock: ColorScheme
+    ) -> ColorScheme? {
+        guard arguments.contains("--ui-testing-disable-material-mode-lock") else {
+            return materialModeLock
+        }
+        guard let argumentIndex = arguments.firstIndex(of: "--ui-testing-color-scheme"),
+              arguments.indices.contains(argumentIndex + 1)
+        else {
+            return nil
+        }
+        switch arguments[argumentIndex + 1] {
+        case "light":
+            return .light
+        case "dark":
+            return .dark
+        default:
+            return nil
+        }
+    }
+}
+#endif
+
 @main
 struct MakingTracksApp: App {
     @UIApplicationDelegateAdaptor(MakingTracksAppDelegate.self) private var appDelegate
@@ -46,7 +78,10 @@ struct MakingTracksApp: App {
     private static let debugShowChipTargetFixture = arguments.contains("--ui-testing-chip-target")
     private static let debugShowPlaceCardPressEvidenceFixture = isFixtureMap && arguments.contains("--ui-testing-place-card-press-evidence")
     private static let debugDoorGlyphFixtureVariant = argumentValue("--ui-testing-door-glyph-fixture")
-    private static let debugDisableMaterialModeLock = arguments.contains("--ui-testing-disable-material-mode-lock")
+    private static let preferredColorScheme = UITestingColorSchemeInjection.resolve(
+        arguments: rawArguments,
+        materialModeLock: MaterialTheme.snow.colorScheme
+    )
     private static let primaryFixturePlaceID = "mt1_00000000000000000000000000"
 #else
     private static let forceFirstRunOnboarding = false
@@ -74,7 +109,7 @@ struct MakingTracksApp: App {
     private static let debugUseReplayVisualFixture = false
     private static let debugShowChipTargetFixture = false
     private static let debugShowPlaceCardPressEvidenceFixture = false
-    private static let debugDisableMaterialModeLock = false
+    private static let preferredColorScheme: ColorScheme? = MaterialTheme.snow.colorScheme
 #endif
 
     init() {
@@ -359,9 +394,7 @@ struct MakingTracksApp: App {
                 rootView
 #endif
             }
-            .preferredColorScheme(
-                Self.debugDisableMaterialModeLock ? nil : MaterialTheme.snow.colorScheme
-            )
+            .preferredColorScheme(Self.preferredColorScheme)
         }
     }
 

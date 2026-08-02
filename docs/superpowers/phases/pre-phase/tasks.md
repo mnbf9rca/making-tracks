@@ -92,3 +92,8 @@ policy/diagnostics · #360 coverage-boundary affordance.
 - 2026-08-01T08:26Z codex3 #594 branch — `fix-594-door-pill-spec` based on fresh `ios` head `da5ce2b`
 - 2026-08-01T08:29Z codex3 #594 tests green — ruled provenance phrase appears exactly once; metric is 15×15 (`IconRole.inline`); OF3 active carry discharged; no frozen-render diff; agent-law lint clean
 - 2026-08-01T08:41Z codex3 #594 PR open — draft #599; Sourcery and independent spec-fidelity review requested
+- 2026-08-01T16:36Z codex3 #602 claimed — prerequisite test-only hardening for #600: bounded keyboard-focus reacquisition at both text-entry siblings and observed legacy-Dark raster transition before Snow oracle diffs
+- 2026-08-01T16:36Z codex3 #602 branch — `fix-602-ui-test-condition-waits` from fresh `origin/ios` `3f63505`; approved design keeps app source untouched and rejects sleeps, unbounded retries, and an app-side sentinel
+- 2026-08-02T02:50Z codex3 #602 tests green — signed head `4d943ff` includes current `origin/ios` `bb0e661`; host Swift package 516/516 and solo codex3 gate 357/357 (108 UI), 0 failed/skipped/expected, no retry; Release and Debug builds passed, DEBUG injection symbols/argument absent from the Release binary, test phase 3,075s, seat FREE
+- 2026-08-02T03:04Z codex3 #602 independent review cleared — initial 0C/0I/2M resolved via tracked removal issue #604 and two non-vacuous malformed-argument tests; follow-up verdict 0C/0I/0M at `c970b77`, focused Release/Debug gate 5/5, refreshed Release absence proof clean, seat FREE
+- 2026-08-02T03:07Z codex3 #602 PR open — draft #605 targets `ios` with `sourcery-review`, `track-b-ios`, and `wp`; planner retains merge ownership and Sourcery remains pending
