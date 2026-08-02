@@ -321,6 +321,34 @@ final class AppShellTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testPlaceCardPressEvidenceStyleDelegatesToRuledProductionStyle() {
+        let routedStyle = PlaceCardQuietStyleResolver.style(
+            for: .hide,
+            theme: .snow
+        )
+        let style = PlaceCardPressEvidenceStyle(theme: .snow)
+
+        XCTAssertEqual(routedStyle.pressFeedback, .textInset(points: 1))
+        XCTAssertEqual(style.productionStyle.pressFeedback, .textInset(points: 1))
+        XCTAssertEqual(
+            style.productionStyle.pressFeedback,
+            routedStyle.pressFeedback,
+            "The evidence wrapper and production Hide route must consume one quiet-style resolver."
+        )
+        XCTAssertEqual(style.action, .hide)
+
+        let mountedStyles = descendants(
+            of: PlaceCardPressEvidenceStyle.self,
+            in: PlaceCardPressInsetEvidenceFixture().body
+        )
+        XCTAssertEqual(
+            mountedStyles.count,
+            1,
+            "The fixture must mount its live production-style wrapper rather than a clone."
+        )
+    }
+
     func testPlaceCardPhotoHeightFollowsAspectRatioWithinTasteClamp() {
         XCTAssertEqual(PlaceCardPhotoLayout.preferredMinimumHeight, 112)
         XCTAssertEqual(PlaceCardPhotoLayout.maximumHeight, 260)

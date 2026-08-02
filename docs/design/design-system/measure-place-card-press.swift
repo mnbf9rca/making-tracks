@@ -1,0 +1,840 @@
+import CoreGraphics
+import CryptoKit
+import Foundation
+import ImageIO
+
+private let restMarker = RGB(red: 0, green: 255, blue: 255)
+private let pressedMarker = RGB(red: 255, green: 0, blue: 255)
+// The BT.709 integer formula below maps Snow's quiet muted #6B675F to 103
+// and its background #F4F1EA to 241. 112 admits the production ink with a
+// narrow decode margin while remaining 129 levels below the background.
+private let productionQuietInkLuminanceThreshold: UInt8 = 112
+private let fixtureTextCrop = CGRect(x: 5, y: 5, width: 12, height: 16)
+private let fixtureMarkerCrop = CGRect(x: 18, y: 0, width: 12, height: 12)
+private let fixtureInkCrop = fixtureTextCrop.union(fixtureMarkerCrop)
+
+struct RGB: Equatable {
+    let red: UInt8
+    let green: UInt8
+    let blue: UInt8
+}
+
+struct InkBounds: Equatable {
+    let darkPixelCount: Int
+    let x: Int
+    let y: Int
+    let width: Int
+    let height: Int
+}
+
+enum LivePressState: String {
+    case rest
+    case pressed
+}
+
+private enum AnalyzerError: LocalizedError {
+    case invalid(String)
+    case markerMismatch
+
+    var errorDescription: String? {
+        switch self {
+        case .invalid(let message):
+            return message
+        case .markerMismatch:
+            return "marker crop is not one exact live state"
+        }
+    }
+}
+
+struct Raster {
+    let width: Int
+    let height: Int
+    let pixels: [UInt8]
+
+    init(width: Int, height: Int, pixels: [UInt8]) throws {
+        guard width > 0, height > 0, width <= 10_000, height <= 10_000,
+              width <= Int.max / height,
+              width * height <= Int.max / 4,
+              pixels.count == width * height * 4
+        else {
+            throw AnalyzerError.invalid("invalid 8-bit RGBA raster")
+        }
+        self.width = width
+        self.height = height
+        self.pixels = pixels
+    }
+
+    init(pngAt url: URL) throws {
+        let values = try FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (values[.size] as? NSNumber)?.intValue ?? -1
+        guard size > 0, size <= 64 * 1024 * 1024 else {
+            throw AnalyzerError.invalid("PNG is empty or exceeds the 64 MiB input limit: \(url.path)")
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              CGImageSourceGetCount(source) == 1,
+              let sourceType = CGImageSourceGetType(source) as String?,
+              sourceType == "public.png",
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else {
+            throw AnalyzerError.invalid("not a single-image PNG: \(url.path)")
+        }
+
+        let imageWidth = image.width
+        let imageHeight = image.height
+        guard imageWidth > 0, imageHeight > 0,
+              imageWidth <= 10_000, imageHeight <= 10_000,
+              imageWidth <= Int.max / imageHeight,
+              imageWidth * imageHeight <= Int.max / 4
+        else {
+            throw AnalyzerError.invalid("PNG dimensions are invalid: \(url.path)")
+        }
+
+        var normalized = [UInt8](repeating: 0, count: imageWidth * imageHeight * 4)
+        guard let context = CGContext(
+            data: &normalized,
+            width: imageWidth,
+            height: imageHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: imageWidth * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else {
+            throw AnalyzerError.invalid("could not normalize PNG to 8-bit RGBA: \(url.path)")
+        }
+        context.interpolationQuality = .none
+        context.draw(image, in: CGRect(x: 0, y: 0, width: imageWidth, height: imageHeight))
+        try self.init(width: imageWidth, height: imageHeight, pixels: normalized)
+    }
+
+    func rgb(x: Int, y: Int) -> RGB {
+        let offset = ((y * width) + x) * 4
+        return RGB(red: pixels[offset], green: pixels[offset + 1], blue: pixels[offset + 2])
+    }
+}
+
+private struct FixtureRaster {
+    let width = 30
+    let height = 30
+    var pixels = [UInt8](repeating: 255, count: 30 * 30 * 4)
+
+    init(
+        inkY: Int,
+        marker: (UInt8, UInt8, UInt8),
+        ink: (UInt8, UInt8, UInt8) = (0, 0, 0),
+        includeInk: Bool = true
+    ) {
+        if includeInk {
+            for y in inkY..<(inkY + 2) {
+                for x in 7..<13 {
+                    let offset = ((y * width) + x) * 4
+                    pixels[offset] = ink.0
+                    pixels[offset + 1] = ink.1
+                    pixels[offset + 2] = ink.2
+                    pixels[offset + 3] = 255
+                }
+            }
+        }
+        for y in 0..<12 {
+            for x in 18..<30 {
+                let markerOffset = ((y * width) + x) * 4
+                pixels[markerOffset] = marker.0
+                pixels[markerOffset + 1] = marker.1
+                pixels[markerOffset + 2] = marker.2
+                pixels[markerOffset + 3] = 255
+            }
+        }
+    }
+}
+
+private func checkedPixelRect(_ crop: CGRect, in raster: Raster) throws -> (minX: Int, minY: Int, maxX: Int, maxY: Int) {
+    guard crop.origin.x.isFinite,
+          crop.origin.y.isFinite,
+          crop.width.isFinite,
+          crop.height.isFinite,
+          crop.width > 0,
+          crop.height > 0,
+          crop.minX >= 0,
+          crop.minY >= 0,
+          crop.maxX <= CGFloat(raster.width),
+          crop.maxY <= CGFloat(raster.height)
+    else {
+        throw AnalyzerError.invalid("crop is non-finite, empty, or outside the PNG frame")
+    }
+    let minX = Int(floor(crop.minX))
+    let minY = Int(floor(crop.minY))
+    let maxX = Int(ceil(crop.maxX))
+    let maxY = Int(ceil(crop.maxY))
+    guard minX >= 0, minY >= 0, maxX > minX, maxY > minY,
+          maxX <= raster.width, maxY <= raster.height
+    else {
+        throw AnalyzerError.invalid("crop does not contain a valid pixel region")
+    }
+    return (minX, minY, maxX, maxY)
+}
+
+func classify(_ raster: Raster, marker: CGRect) throws -> LivePressState {
+    let rect = try checkedPixelRect(marker, in: raster)
+    var restSamples = 0
+    var pressedSamples = 0
+    var sampleCount = 0
+
+    for y in rect.minY..<rect.maxY {
+        for x in rect.minX..<rect.maxX {
+            sampleCount += 1
+            let sample = raster.rgb(x: x, y: y)
+            if sample == restMarker {
+                restSamples += 1
+            } else if sample == pressedMarker {
+                pressedSamples += 1
+            } else {
+                throw AnalyzerError.markerMismatch
+            }
+        }
+    }
+    guard sampleCount > 0 else {
+        throw AnalyzerError.invalid("marker crop has no samples")
+    }
+    if restSamples == sampleCount { return .rest }
+    if pressedSamples == sampleCount { return .pressed }
+    throw AnalyzerError.markerMismatch
+}
+
+private func bt709IntegerLuminance(_ pixel: RGB) -> Int {
+    (54 * Int(pixel.red) + 183 * Int(pixel.green) + 19 * Int(pixel.blue)) >> 8
+}
+
+// The accessibility button frame includes the state marker, but that marker is
+// evidence metadata rather than semantic label ink and must never affect bounds.
+// One production-quiet BT.709 integer threshold classifies text in every frame.
+func measureInk(
+    _ raster: Raster,
+    crop: CGRect,
+    excluding marker: CGRect,
+    luminanceThreshold: UInt8
+) throws -> InkBounds {
+    let rect = try checkedPixelRect(crop, in: raster)
+    let markerRect = try checkedPixelRect(marker, in: raster)
+    guard markerRect.minX >= rect.minX,
+          markerRect.minY >= rect.minY,
+          markerRect.maxX <= rect.maxX,
+          markerRect.maxY <= rect.maxY
+    else {
+        throw AnalyzerError.invalid("marker crop is not contained in the ink crop")
+    }
+    var darkPixelCount = 0
+    var minimumX = Int.max
+    var minimumY = Int.max
+    var maximumX = Int.min
+    var maximumY = Int.min
+
+    for y in rect.minY..<rect.maxY {
+        for x in rect.minX..<rect.maxX {
+            if x >= markerRect.minX, x < markerRect.maxX,
+               y >= markerRect.minY, y < markerRect.maxY {
+                continue
+            }
+            let pixel = raster.rgb(x: x, y: y)
+            let luminance = bt709IntegerLuminance(pixel)
+            if luminance <= Int(luminanceThreshold) {
+                darkPixelCount += 1
+                minimumX = min(minimumX, x)
+                minimumY = min(minimumY, y)
+                maximumX = max(maximumX, x)
+                maximumY = max(maximumY, y)
+            }
+        }
+    }
+
+    guard darkPixelCount > 0 else {
+        throw AnalyzerError.invalid("ink crop has no dark samples")
+    }
+    return InkBounds(
+        darkPixelCount: darkPixelCount,
+        x: minimumX,
+        y: minimumY,
+        width: maximumX - minimumX + 1,
+        height: maximumY - minimumY + 1
+    )
+}
+
+func displacement(rest: InkBounds, pressed: InkBounds) -> Int {
+    pressed.y - rest.y
+}
+
+private func validateDisplacementGrowth(default defaultDelta: Int, ax axDelta: Int) throws {
+    guard defaultDelta > 0 else {
+        throw AnalyzerError.invalid("default displacement must be positive")
+    }
+    guard axDelta > defaultDelta else {
+        throw AnalyzerError.invalid("AX displacement must exceed default")
+    }
+}
+
+private func runSelfTest() throws {
+    let productionQuietMuted: (UInt8, UInt8, UInt8) = (0x6B, 0x67, 0x5F)
+    let snowBackground = RGB(red: 0xF4, green: 0xF1, blue: 0xEA)
+    let quietMutedLuminance = bt709IntegerLuminance(RGB(
+        red: productionQuietMuted.0,
+        green: productionQuietMuted.1,
+        blue: productionQuietMuted.2
+    ))
+    let snowBackgroundLuminance = bt709IntegerLuminance(snowBackground)
+    let restMarkerLuminance = bt709IntegerLuminance(restMarker)
+    let pressedMarkerLuminance = bt709IntegerLuminance(pressedMarker)
+    precondition(quietMutedLuminance == 103, "production quiet muted luminance must stay pinned")
+    precondition(snowBackgroundLuminance == 241, "Snow background luminance must stay pinned")
+    precondition(restMarkerLuminance == 201, "exact rest marker luminance must stay pinned")
+    precondition(pressedMarkerLuminance == 72, "exact pressed marker luminance must stay pinned")
+    precondition(
+        snowBackgroundLuminance > Int(productionQuietInkLuminanceThreshold),
+        "production quiet threshold must exclude the Snow background"
+    )
+    precondition(
+        pressedMarkerLuminance <= Int(productionQuietInkLuminanceThreshold),
+        "pressed marker must exercise semantic-ink exclusion"
+    )
+
+    let restPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 8, marker: (0, 255, 255), ink: productionQuietMuted).pixels)
+    let defaultPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 11, marker: (255, 0, 255), ink: productionQuietMuted).pixels)
+    let axPressedPixels = try Raster(width: 30, height: 30, pixels: FixtureRaster(inkY: 14, marker: (255, 0, 255), ink: productionQuietMuted).pixels)
+    let markerOnlyPixels = try Raster(
+        width: 30,
+        height: 30,
+        pixels: FixtureRaster(inkY: 11, marker: (255, 0, 255), includeInk: false).pixels
+    )
+
+    var mixedMarkerFixture = FixtureRaster(inkY: 8, marker: (0, 255, 255)).pixels
+    mixedMarkerFixture[((6 * 30) + 24) * 4] = 255
+    mixedMarkerFixture[((6 * 30) + 24) * 4 + 1] = 0
+    mixedMarkerFixture[((6 * 30) + 24) * 4 + 2] = 255
+    let mixedMarker = try Raster(width: 30, height: 30, pixels: mixedMarkerFixture)
+
+    let restState = try classify(restPixels, marker: fixtureMarkerCrop)
+    let pressedState = try classify(defaultPressedPixels, marker: fixtureMarkerCrop)
+    let markerOnlyState = try classify(markerOnlyPixels, marker: fixtureMarkerCrop)
+    precondition(restState == .rest)
+    precondition(pressedState == .pressed)
+    precondition(markerOnlyState == .pressed)
+    do {
+        _ = try classify(mixedMarker, marker: fixtureMarkerCrop)
+        preconditionFailure("mixed marker must be rejected")
+    } catch AnalyzerError.markerMismatch {
+        // Expected: an exact state marker may not mix the fixture RGB values.
+    }
+    do {
+        _ = try measureInk(
+            restPixels,
+            crop: CGRect(x: -1, y: 5, width: 12, height: 16),
+            excluding: fixtureMarkerCrop,
+            luminanceThreshold: productionQuietInkLuminanceThreshold
+        )
+        preconditionFailure("out-of-frame crop must be rejected")
+    } catch AnalyzerError.invalid {
+        // Expected: evidence crops never clip silently.
+    }
+    do {
+        _ = try measureInk(
+            restPixels,
+            crop: fixtureInkCrop,
+            excluding: CGRect(x: 0, y: 0, width: 1, height: 1),
+            luminanceThreshold: productionQuietInkLuminanceThreshold
+        )
+        preconditionFailure("marker exclusion outside the accessibility crop must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "marker crop is not contained in the ink crop")
+    }
+    do {
+        _ = try measureInk(
+            markerOnlyPixels,
+            crop: fixtureInkCrop,
+            excluding: fixtureMarkerCrop,
+            luminanceThreshold: productionQuietInkLuminanceThreshold
+        )
+        preconditionFailure("a valid state marker without text ink must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "ink crop has no dark samples")
+    }
+    let orientationURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("measure-place-card-orientation-\(UUID().uuidString).png")
+    defer { try? FileManager.default.removeItem(at: orientationURL) }
+    try writeOrientationFixturePNG(to: orientationURL)
+    let decodedOrientation = try Raster(pngAt: orientationURL)
+    precondition(decodedOrientation.rgb(x: 0, y: 0) == RGB(red: 255, green: 0, blue: 0), "decoded PNG top row must stay row 0")
+    precondition(decodedOrientation.rgb(x: 0, y: 1) == RGB(red: 0, green: 0, blue: 255), "decoded PNG bottom row must stay row 1")
+
+    let frameDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("measure-place-card-frame-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: frameDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: frameDirectory) }
+    let realisticFrameURL = frameDirectory.appendingPathComponent("realistic.txt")
+    try """
+    capture: realistic
+    screen-scale: 3.00
+    hide: x=152.33 y=413.00 width=81.33 height=60.00
+    state: x=152.33 y=413.00 width=12.00 height=12.00
+
+    """.write(to: realisticFrameURL, atomically: true, encoding: .utf8)
+    let realisticFrame = try ExportedFrame(file: realisticFrameURL)
+    let realisticMarkerCrop = try realisticFrame.markerCrop()
+    precondition(
+        realisticMarkerCrop == CGRect(x: 457, y: 1239, width: 36, height: 36),
+        "marker crop must use the exported state frame with rounded device-pixel edges"
+    )
+
+    let missingStateURL = frameDirectory.appendingPathComponent("missing-state.txt")
+    try """
+    screen-scale: 3.00
+    hide: x=152.33 y=413.00 width=81.33 height=60.00
+
+    """.write(to: missingStateURL, atomically: true, encoding: .utf8)
+    do {
+        _ = try ExportedFrame(file: missingStateURL)
+        preconditionFailure("missing state frame must be rejected")
+    } catch AnalyzerError.invalid {
+        // Expected: marker geometry is mandatory evidence input.
+    }
+
+    let fractionalStateURL = frameDirectory.appendingPathComponent("fractional-state.txt")
+    try """
+    screen-scale: 3.00
+    hide: x=152.33 y=413.00 width=81.33 height=60.00
+    state: x=152.20 y=413.00 width=12.00 height=12.00
+
+    """.write(to: fractionalStateURL, atomically: true, encoding: .utf8)
+    do {
+        _ = try ExportedFrame(file: fractionalStateURL).markerCrop()
+        preconditionFailure("state edges far from device pixels must be rejected")
+    } catch AnalyzerError.invalid {
+        // Expected: two-decimal serialization may round to a pixel, not widen a fractional crop.
+    }
+
+    let selectionFrameURL = frameDirectory.appendingPathComponent("selection-frame.txt")
+    try """
+    screen-scale: 1.00
+    hide: x=5.00 y=0.00 width=25.00 height=21.00
+    state: x=18.00 y=0.00 width=12.00 height=12.00
+
+    """.write(to: selectionFrameURL, atomically: true, encoding: .utf8)
+    let selectionFrame = try ExportedFrame(file: selectionFrameURL)
+    let defaultCandidates = frameDirectory.appendingPathComponent("default-candidates", isDirectory: true)
+    let axCandidates = frameDirectory.appendingPathComponent("ax-candidates", isDirectory: true)
+    let missingPressedCandidates = frameDirectory.appendingPathComponent("missing-pressed", isDirectory: true)
+    let invalidCandidates = frameDirectory.appendingPathComponent("invalid-candidate", isDirectory: true)
+    for directory in [defaultCandidates, axCandidates, missingPressedCandidates, invalidCandidates] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    func writeCandidate(
+        directory: URL,
+        name: String,
+        inkY: Int,
+        marker: (UInt8, UInt8, UInt8),
+        includeInk: Bool = true
+    ) throws -> URL {
+        let url = directory.appendingPathComponent(name)
+        let fixture = FixtureRaster(
+            inkY: inkY,
+            marker: marker,
+            ink: productionQuietMuted,
+            includeInk: includeInk
+        )
+        try writeFixturePNG(width: fixture.width, height: fixture.height, pixels: fixture.pixels, to: url)
+        return url
+    }
+
+    let defaultRestA = try writeCandidate(directory: defaultCandidates, name: "rest-a.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: defaultCandidates, name: "rest-b.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: defaultCandidates, name: "rest-later.png", inkY: 9, marker: (0, 255, 255))
+    let defaultPressedA = try writeCandidate(directory: defaultCandidates, name: "pressed-a.png", inkY: 11, marker: (255, 0, 255))
+    _ = try writeCandidate(directory: defaultCandidates, name: "pressed-b.png", inkY: 11, marker: (255, 0, 255))
+
+    let axRestA = try writeCandidate(directory: axCandidates, name: "rest-a.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: axCandidates, name: "rest-later.png", inkY: 9, marker: (0, 255, 255))
+    _ = try writeCandidate(directory: axCandidates, name: "pressed-intermediate.png", inkY: 11, marker: (255, 0, 255))
+    let axPressedA = try writeCandidate(directory: axCandidates, name: "pressed-a.png", inkY: 14, marker: (255, 0, 255))
+    _ = try writeCandidate(directory: axCandidates, name: "pressed-b.png", inkY: 14, marker: (255, 0, 255))
+
+    let defaultSelection = try selectedCandidate(in: defaultCandidates, frame: selectionFrame)
+    let axSelection = try selectedCandidate(in: axCandidates, frame: selectionFrame)
+    precondition(defaultSelection.rest.url.lastPathComponent == defaultRestA.lastPathComponent, "rest selection chose \(defaultSelection.rest.url.lastPathComponent), expected the least-displaced filename tie winner")
+    precondition(defaultSelection.pressed.url.lastPathComponent == defaultPressedA.lastPathComponent, "default pressed selection chose \(defaultSelection.pressed.url.lastPathComponent), expected the filename tie winner")
+    precondition(axSelection.rest.url.lastPathComponent == axRestA.lastPathComponent, "AX rest selection chose \(axSelection.rest.url.lastPathComponent), expected the least-displaced candidate")
+    precondition(axSelection.pressed.url.lastPathComponent == axPressedA.lastPathComponent, "AX pressed selection chose \(axSelection.pressed.url.lastPathComponent), expected the fully displaced filename tie winner")
+
+    let selectedRestOutput = frameDirectory.appendingPathComponent("selected-rest.png")
+    let selectedPressedOutput = frameDirectory.appendingPathComponent("selected-pressed.png")
+    try writeSelectedCandidates(
+        axSelection,
+        restOutput: selectedRestOutput,
+        pressedOutput: selectedPressedOutput
+    )
+    let selectedRestBytes = try Data(contentsOf: selectedRestOutput)
+    let selectedPressedBytes = try Data(contentsOf: selectedPressedOutput)
+    let axRestSourceBytes = try Data(contentsOf: axRestA)
+    let axPressedSourceBytes = try Data(contentsOf: axPressedA)
+    precondition(selectedRestBytes == axRestSourceBytes, "selected rest output must copy source bytes")
+    precondition(selectedPressedBytes == axPressedSourceBytes, "selected pressed output must copy source bytes")
+
+    _ = try writeCandidate(directory: missingPressedCandidates, name: "rest-only.png", inkY: 8, marker: (0, 255, 255))
+    do {
+        _ = try selectedCandidate(in: missingPressedCandidates, frame: selectionFrame)
+        preconditionFailure("missing pressed state must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "missing valid exact pressed marker; rejected 0 candidates")
+    }
+
+    _ = try writeCandidate(directory: invalidCandidates, name: "rest.png", inkY: 8, marker: (0, 255, 255))
+    _ = try writeCandidate(
+        directory: invalidCandidates,
+        name: "pressed-invalid.png",
+        inkY: 11,
+        marker: (255, 0, 255),
+        includeInk: false
+    )
+    do {
+        _ = try selectedCandidate(in: invalidCandidates, frame: selectionFrame)
+        preconditionFailure("an exact-marker candidate with invalid ink must fail closed")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "candidate pressed-invalid.png: ink crop has no dark samples")
+        precondition(!message.contains(frameDirectory.path), "candidate errors must not expose temporary paths")
+    }
+
+    let selectedDefaultDelta = displacement(rest: defaultSelection.rest.ink, pressed: defaultSelection.pressed.ink)
+    let selectedAXDelta = displacement(rest: axSelection.rest.ink, pressed: axSelection.pressed.ink)
+    try validateDisplacementGrowth(default: selectedDefaultDelta, ax: selectedAXDelta)
+    do {
+        try validateDisplacementGrowth(default: selectedDefaultDelta, ax: selectedDefaultDelta)
+        preconditionFailure("equal AX displacement must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "AX displacement must exceed default")
+    }
+    do {
+        try validateDisplacementGrowth(default: 0, ax: selectedAXDelta)
+        preconditionFailure("zero default displacement must be rejected")
+    } catch AnalyzerError.invalid(let message) {
+        precondition(message == "default displacement must be positive")
+    }
+
+    let rest = try measureInk(restPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+    let defaultPressed = try measureInk(defaultPressedPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+    let axPressed = try measureInk(axPressedPixels, crop: fixtureInkCrop, excluding: fixtureMarkerCrop, luminanceThreshold: productionQuietInkLuminanceThreshold)
+    precondition(rest == InkBounds(darkPixelCount: 12, x: 7, y: 8, width: 6, height: 2), "rest text bounds must exclude its state marker")
+    precondition(defaultPressed == InkBounds(darkPixelCount: 12, x: 7, y: 11, width: 6, height: 2), "default pressed text bounds must exclude its state marker")
+    precondition(axPressed == InkBounds(darkPixelCount: 12, x: 7, y: 14, width: 6, height: 2), "AX pressed text bounds must exclude its state marker")
+    let defaultDelta = displacement(rest: rest, pressed: defaultPressed)
+    let axDelta = displacement(rest: rest, pressed: axPressed)
+    precondition(defaultDelta == 3, "default displacement must be 3")
+    precondition(axDelta == 6, "AX displacement must be 6")
+    try validateDisplacementGrowth(default: defaultDelta, ax: axDelta)
+    print("PASS default=\(defaultDelta) ax=\(axDelta)")
+}
+
+private func writeFixturePNG(
+    width: Int,
+    height: Int,
+    pixels: [UInt8],
+    to url: URL
+) throws {
+    guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+          let image = CGImage(
+              width: width,
+              height: height,
+              bitsPerComponent: 8,
+              bitsPerPixel: 32,
+              bytesPerRow: width * 4,
+              space: CGColorSpaceCreateDeviceRGB(),
+              bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+              provider: provider,
+              decode: nil,
+              shouldInterpolate: false,
+              intent: .defaultIntent
+          ),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
+    else {
+        throw AnalyzerError.invalid("could not create candidate PNG fixture")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw AnalyzerError.invalid("could not write candidate PNG fixture")
+    }
+}
+
+private func writeOrientationFixturePNG(to url: URL) throws {
+    // PNG scanlines are top-to-bottom: red/green first, blue/black second.
+    let pixels: [UInt8] = [
+        255, 0, 0, 255, 0, 255, 0, 255,
+        0, 0, 255, 255, 0, 0, 0, 255,
+    ]
+    guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+          let image = CGImage(
+              width: 2,
+              height: 2,
+              bitsPerComponent: 8,
+              bitsPerPixel: 32,
+              bytesPerRow: 8,
+              space: CGColorSpaceCreateDeviceRGB(),
+              bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+              provider: provider,
+              decode: nil,
+              shouldInterpolate: false,
+              intent: .defaultIntent
+          ),
+          let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil)
+    else {
+        throw AnalyzerError.invalid("could not create PNG orientation fixture")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw AnalyzerError.invalid("could not write PNG orientation fixture")
+    }
+}
+
+private struct ExportedFrame {
+    let button: CGRect
+    let state: CGRect
+    let screenScale: CGFloat
+
+    init(file: URL) throws {
+        let text = try String(contentsOf: file, encoding: .utf8)
+        var scale: Double?
+        var buttonValues: [String: Double] = [:]
+        var stateValues: [String: Double] = [:]
+        for rawLine in text.split(whereSeparator: \.isNewline) {
+            let line = String(rawLine)
+            if line.hasPrefix("screen-scale:") {
+                scale = Double(line.dropFirst("screen-scale:".count).trimmingCharacters(in: .whitespaces))
+            } else if line.hasPrefix("hide:") || line.hasPrefix("state:") {
+                let isState = line.hasPrefix("state:")
+                for field in line.split(separator: " ").dropFirst() {
+                    let pair = field.split(separator: "=", maxSplits: 1)
+                    guard pair.count == 2, let number = Double(pair[1]) else {
+                        throw AnalyzerError.invalid("malformed frame record: \(file.path)")
+                    }
+                    if isState {
+                        stateValues[String(pair[0])] = number
+                    } else {
+                        buttonValues[String(pair[0])] = number
+                    }
+                }
+            }
+        }
+        guard let buttonX = buttonValues["x"], let buttonY = buttonValues["y"],
+              let buttonWidth = buttonValues["width"], let buttonHeight = buttonValues["height"],
+              let stateX = stateValues["x"], let stateY = stateValues["y"],
+              let stateWidth = stateValues["width"], let stateHeight = stateValues["height"],
+              let scale,
+              buttonX.isFinite, buttonY.isFinite, buttonWidth.isFinite, buttonHeight.isFinite,
+              stateX.isFinite, stateY.isFinite, stateWidth.isFinite, stateHeight.isFinite,
+              scale.isFinite, buttonWidth > 0, buttonHeight > 0,
+              stateWidth > 0, stateHeight > 0, scale > 0
+        else {
+            throw AnalyzerError.invalid("missing or invalid Hide/state frame record: \(file.path)")
+        }
+        button = CGRect(x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight)
+        state = CGRect(x: stateX, y: stateY, width: stateWidth, height: stateHeight)
+        screenScale = CGFloat(scale)
+    }
+
+    var inkCrop: CGRect {
+        CGRect(
+            x: button.minX * screenScale,
+            y: button.minY * screenScale,
+            width: button.width * screenScale,
+            height: button.height * screenScale
+        )
+    }
+
+    func markerCrop() throws -> CGRect {
+        func roundedPixelEdge(_ pointEdge: CGFloat) throws -> CGFloat {
+            let scaled = pointEdge * screenScale
+            let rounded = scaled.rounded()
+            guard abs(scaled - rounded) <= 0.02 else {
+                throw AnalyzerError.invalid("state frame edge does not resolve to a device pixel")
+            }
+            return rounded
+        }
+        let minX = try roundedPixelEdge(state.minX)
+        let minY = try roundedPixelEdge(state.minY)
+        let maxX = try roundedPixelEdge(state.maxX)
+        let maxY = try roundedPixelEdge(state.maxY)
+        guard maxX > minX, maxY > minY else {
+            throw AnalyzerError.invalid("state frame has no device-pixel area")
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+}
+
+private struct Candidate {
+    let url: URL
+    let state: LivePressState
+    let ink: InkBounds
+    let sha256: String
+    let dimensions: String
+}
+
+private func writeSelectedCandidates(
+    _ selection: (rest: Candidate, pressed: Candidate),
+    restOutput: URL,
+    pressedOutput: URL
+) throws {
+    try FileManager.default.copyItem(at: selection.rest.url, to: restOutput)
+    try FileManager.default.copyItem(at: selection.pressed.url, to: pressedOutput)
+}
+
+private func digest(of url: URL) throws -> String {
+    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+    return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+private func selectedCandidate(
+    in directory: URL,
+    frame: ExportedFrame
+) throws -> (rest: Candidate, pressed: Candidate) {
+    let markerCrop = try frame.markerCrop()
+    let files = try FileManager.default.contentsOfDirectory(
+        at: directory,
+        includingPropertiesForKeys: [.isRegularFileKey],
+        options: [.skipsHiddenFiles]
+    )
+    .filter { $0.pathExtension.lowercased() == "png" }
+    .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    guard !files.isEmpty else {
+        throw AnalyzerError.invalid("no PNG candidates in \(directory.path)")
+    }
+
+    var candidates: [Candidate] = []
+    var exactMarkerFailureCount = 0
+    for file in files {
+        let raster = try Raster(pngAt: file)
+        let state: LivePressState
+        do {
+            state = try classify(raster, marker: markerCrop)
+        } catch AnalyzerError.markerMismatch {
+            exactMarkerFailureCount += 1
+            continue
+        } catch {
+            throw AnalyzerError.invalid(
+                "candidate \(file.lastPathComponent): \(error.localizedDescription)"
+            )
+        }
+        let ink: InkBounds
+        do {
+            ink = try measureInk(
+                raster,
+                crop: frame.inkCrop,
+                excluding: markerCrop,
+                luminanceThreshold: productionQuietInkLuminanceThreshold
+            )
+        } catch {
+            throw AnalyzerError.invalid(
+                "candidate \(file.lastPathComponent): \(error.localizedDescription)"
+            )
+        }
+        let candidateDigest: String
+        do {
+            candidateDigest = try digest(of: file)
+        } catch {
+            throw AnalyzerError.invalid(
+                "candidate \(file.lastPathComponent): could not read bytes for SHA-256"
+            )
+        }
+        candidates.append(Candidate(
+            url: file,
+            state: state,
+            ink: ink,
+            sha256: candidateDigest,
+            dimensions: "\(raster.width)x\(raster.height)"
+        ))
+    }
+    guard let rest = candidates.filter({ $0.state == .rest }).min(by: {
+        $0.ink.y == $1.ink.y
+            ? $0.url.lastPathComponent < $1.url.lastPathComponent
+            : $0.ink.y < $1.ink.y
+    }) else {
+        throw AnalyzerError.invalid("missing valid exact rest marker; rejected \(exactMarkerFailureCount) candidates")
+    }
+    guard let pressed = candidates.filter({ $0.state == .pressed }).max(by: {
+        $0.ink.y == $1.ink.y
+            ? $0.url.lastPathComponent > $1.url.lastPathComponent
+            : $0.ink.y < $1.ink.y
+    }) else {
+        throw AnalyzerError.invalid("missing valid exact pressed marker; rejected \(exactMarkerFailureCount) candidates")
+    }
+    return (rest, pressed)
+}
+
+private func format(_ candidate: Candidate) -> String {
+    "file=\(candidate.url.lastPathComponent) dimensions=\(candidate.dimensions) sha256=\(candidate.sha256) ink=\(candidate.ink.darkPixelCount) bounds=\(candidate.ink.x),\(candidate.ink.y),\(candidate.ink.width),\(candidate.ink.height)"
+}
+
+private func argumentValue(_ arguments: [String], named name: String) throws -> String {
+    guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else {
+        throw AnalyzerError.invalid("missing \(name)")
+    }
+    return arguments[index + 1]
+}
+
+private func runSelection(arguments: [String]) throws {
+    let candidates = URL(fileURLWithPath: try argumentValue(arguments, named: "--candidates"), isDirectory: true)
+    let frame = try ExportedFrame(file: URL(fileURLWithPath: try argumentValue(arguments, named: "--frame")))
+    let restOutput = URL(fileURLWithPath: try argumentValue(arguments, named: "--rest-output"))
+    let pressedOutput = URL(fileURLWithPath: try argumentValue(arguments, named: "--pressed-output"))
+    let label = try argumentValue(arguments, named: "--label")
+    guard !FileManager.default.fileExists(atPath: restOutput.path),
+          !FileManager.default.fileExists(atPath: pressedOutput.path)
+    else {
+        throw AnalyzerError.invalid("selection output already exists")
+    }
+
+    let selection = try selectedCandidate(in: candidates, frame: frame)
+    let topDelta = displacement(rest: selection.rest.ink, pressed: selection.pressed.ink)
+    let centerDelta = (Double(selection.pressed.ink.y) + Double(selection.pressed.ink.height) / 2)
+        - (Double(selection.rest.ink.y) + Double(selection.rest.ink.height) / 2)
+    guard topDelta > 0 else {
+        throw AnalyzerError.invalid("pressed ink must be positively displaced from rest")
+    }
+    try writeSelectedCandidates(
+        selection,
+        restOutput: restOutput,
+        pressedOutput: pressedOutput
+    )
+    print("\(label) rest \(format(selection.rest))")
+    print("\(label) pressed \(format(selection.pressed))")
+    let formattedCenterDelta = String(format: "%.1f", centerDelta)
+    print("RESULT label=\(label) top_displacement=\(topDelta) center_displacement=\(formattedCenterDelta)")
+}
+
+private func runGrowthValidation(arguments: [String]) throws {
+    guard arguments.count == 5,
+          arguments[0] == "--validate-growth",
+          arguments[1] == "--default",
+          arguments[3] == "--ax",
+          let defaultDelta = Int(arguments[2]),
+          let axDelta = Int(arguments[4])
+    else {
+        throw AnalyzerError.invalid("--validate-growth requires integer --default N --ax N")
+    }
+    try validateDisplacementGrowth(default: defaultDelta, ax: axDelta)
+    print("RESULT displacement-growth default=\(defaultDelta) ax=\(axDelta)")
+}
+
+private func usage() -> Never {
+    fputs("usage: measure-place-card-press.swift --self-test\n       measure-place-card-press.swift --select --candidates DIR --frame FILE --rest-output PNG --pressed-output PNG --label NAME\n       measure-place-card-press.swift --validate-growth --default N --ax N\n", stderr)
+    exit(64)
+}
+
+do {
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    if arguments == ["--self-test"] {
+        try runSelfTest()
+    } else if arguments.first == "--select" {
+        try runSelection(arguments: arguments)
+    } else if arguments.first == "--validate-growth" {
+        try runGrowthValidation(arguments: arguments)
+    } else {
+        usage()
+    }
+} catch {
+    fputs("measure-place-card-press: \(error.localizedDescription)\n", stderr)
+    exit(1)
+}
