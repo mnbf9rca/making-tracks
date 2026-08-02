@@ -355,13 +355,13 @@ git push origin HEAD
 - Consumes: the final branch head and seat `codex3`.
 - Produces: host evidence, one solo full-gate record, #600 cap-1/2 telemetry, independent review, and a draft PR into `ios`.
 
-- [ ] **Step 1: Run the host suite**
+- [x] **Step 1: Run the host suite**
 
 Run `swift test` with the working directory set to `ios/`.
 
 Expected baseline: 516 tests, 0 failures, zero new warnings.
 
-- [ ] **Step 2: Run one solo full gate**
+- [x] **Step 2: Run one solo full gate**
 
 ```bash
 ./scripts/sim-lock.sh --seat codex3 ./scripts/release-gate.sh
@@ -369,7 +369,7 @@ Expected baseline: 516 tests, 0 failures, zero new warnings.
 
 Capture Release and Debug build results, exact unit/UI counts, wall time, retry/flake count, and host pressure samples. Clean the task `.xcresult` through the documented wrapper-safe gate cleanup path and verify `--status` reports `FREE`.
 
-- [ ] **Step 3: Record #602 and #600 evidence durably**
+- [x] **Step 3: Record #602 and #600 evidence durably**
 
 Add a `tests green` row for #602 to `docs/superpowers/phases/pre-phase/tasks.md`. Add the solo gate as live cap-1/2 telemetry in the #600 branch record and relay the exact evidence to the planner over AMQ.
 

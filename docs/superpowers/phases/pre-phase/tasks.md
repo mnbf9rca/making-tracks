@@ -94,3 +94,4 @@ policy/diagnostics · #360 coverage-boundary affordance.
 - 2026-08-01T08:41Z codex3 #594 PR open — draft #599; Sourcery and independent spec-fidelity review requested
 - 2026-08-01T16:36Z codex3 #602 claimed — prerequisite test-only hardening for #600: bounded keyboard-focus reacquisition at both text-entry siblings and observed legacy-Dark raster transition before Snow oracle diffs
 - 2026-08-01T16:36Z codex3 #602 branch — `fix-602-ui-test-condition-waits` from fresh `origin/ios` `3f63505`; approved design keeps app source untouched and rejects sleeps, unbounded retries, and an app-side sentinel
+- 2026-08-02T02:50Z codex3 #602 tests green — signed head `4d943ff` includes current `origin/ios` `bb0e661`; host Swift package 516/516 and solo codex3 gate 357/357 (108 UI), 0 failed/skipped/expected, no retry; Release and Debug builds passed, DEBUG injection symbols/argument absent from the Release binary, test phase 3,075s, seat FREE
