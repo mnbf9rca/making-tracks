@@ -521,26 +521,11 @@ private enum RenderedDifferenceWaiter {
         interval: TimeInterval = 0,
         sample: () -> Int?
     ) -> RenderedDifferenceMatch {
-        precondition(attempts > 0, "rendered difference wait must make at least one sample")
-
-        var observed: Int?
-        for attempt in 1...attempts {
-            observed = sample()
-            if let observed, observed > threshold {
-                return RenderedDifferenceMatch(
-                    matched: true,
-                    observed: observed,
-                    attempts: attempt
-                )
-            }
-            if interval > 0, attempt < attempts {
-                RunLoop.current.run(until: Date().addingTimeInterval(interval))
-            }
-        }
-        return RenderedDifferenceMatch(
-            matched: false,
-            observed: observed,
-            attempts: attempts
+        wait(
+            attempts: attempts,
+            interval: interval,
+            matches: { $0 > threshold },
+            sample: sample
         )
     }
 
@@ -550,12 +535,26 @@ private enum RenderedDifferenceWaiter {
         interval: TimeInterval = 0,
         sample: () -> Int?
     ) -> RenderedDifferenceMatch {
+        wait(
+            attempts: attempts,
+            interval: interval,
+            matches: { $0 <= threshold },
+            sample: sample
+        )
+    }
+
+    private static func wait(
+        attempts: Int,
+        interval: TimeInterval,
+        matches: (Int) -> Bool,
+        sample: () -> Int?
+    ) -> RenderedDifferenceMatch {
         precondition(attempts > 0, "rendered difference wait must make at least one sample")
 
         var observed: Int?
         for attempt in 1...attempts {
             observed = sample()
-            if let observed, observed <= threshold {
+            if let observed, matches(observed) {
                 return RenderedDifferenceMatch(
                     matched: true,
                     observed: observed,
