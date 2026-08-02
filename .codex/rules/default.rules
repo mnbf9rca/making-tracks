@@ -22,6 +22,30 @@ for pattern in [
         justification = "Use /Users/rob/.local/bin/making-tracks-vps",
     )
 
+# Linked worktrees resolve .git to protected shared metadata. Fetch the two
+# long-lived targets outside the sandbox, while keeping arbitrary refspecs
+# approval-bound because rules constrain commands rather than repository paths.
+target_branches = ["develop", "ios"]
+
+prefix_rule(
+    pattern = ["git", "fetch", "origin", target_branches],
+    decision = "allow",
+    justification = "Fetch an approved Making Tracks target branch from origin",
+    match = [
+        "git fetch origin ios",
+        "git fetch origin develop",
+    ],
+    not_match = [
+        "git fetch upstream ios",
+        "git fetch --all",
+        "git fetch origin",
+        "git fetch origin --all",
+        "git fetch origin main",
+        "git fetch origin +refs/heads/ios:refs/heads/ios",
+        "git push origin ios",
+    ],
+)
+
 # The designated simulators have one entry point. The stable logical seat is
 # bounded here; sim-lock resolves its mutable destination from the gate ledger.
 # Erase remains approval-bound because it is destructive.
