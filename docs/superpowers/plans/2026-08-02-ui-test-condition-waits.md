@@ -381,6 +381,6 @@ Review spec fidelity, bounded-wait correctness, failure semantics, test teeth, a
 
 Fetch `origin/ios`, prove `origin/ios` is an ancestor of `HEAD`, run `git diff --check`, review `git diff --stat origin/ios..HEAD`, verify signed commits and a clean worktree, then push.
 
-- [ ] **Step 6: Open the draft PR**
+- [x] **Step 6: Open the draft PR**
 
 Open a draft PR into `ios` that names #602 and #600, includes exact test counts and review accounting, and applies `sourcery-review`, `track-b-ios`, and `wp`. Process Sourcery and independent-review findings; do not merge.
