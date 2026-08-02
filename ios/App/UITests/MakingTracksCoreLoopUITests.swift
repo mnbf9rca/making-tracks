@@ -18,6 +18,18 @@ private struct AXFocusAcquisitionMatch: Equatable {
     let attempts: Int
 }
 
+private enum AXScrollObservation: String, Equatable {
+    case missing
+    case presentNotHittable = "present but not hittable"
+    case hittable
+}
+
+private struct AXScrollMatch: Equatable {
+    let matched: Bool
+    let scrolls: Int
+    let observation: AXScrollObservation
+}
+
 private enum KeyboardFocusProxy: String, Equatable {
     case softwareKeyboardPresence = "software-keyboard presence"
     case focusedElementQuery = "focused-element query"
@@ -511,6 +523,53 @@ private enum AXFocusAcquirer {
             }
         }
         return AXFocusAcquisitionMatch(matched: focused, attempts: attempts)
+    }
+}
+
+private enum AXBoundedScroller {
+    static func acquire(
+        maxScrolls: Int,
+        observe: () -> AXScrollObservation,
+        scroll: () -> Void
+    ) -> AXScrollMatch {
+        precondition(maxScrolls > 0, "bounded scrolling must allow at least one scroll")
+
+        var observation = observe()
+        guard observation != .hittable else {
+            return AXScrollMatch(matched: true, scrolls: 0, observation: observation)
+        }
+
+        for scrollCount in 1...maxScrolls {
+            scroll()
+            observation = observe()
+            if observation == .hittable {
+                return AXScrollMatch(
+                    matched: true,
+                    scrolls: scrollCount,
+                    observation: observation
+                )
+            }
+        }
+
+        return AXScrollMatch(
+            matched: false,
+            scrolls: maxScrolls,
+            observation: observation
+        )
+    }
+}
+
+private enum UITestArtifactDirectorySelector {
+    private static let fallbackPath = "/private/tmp/making-tracks-artifacts"
+
+    static func directory(simulatorID: String?) -> URL {
+        guard let simulatorID, !simulatorID.isEmpty else {
+            return URL(fileURLWithPath: fallbackPath, isDirectory: true)
+        }
+        return URL(
+            fileURLWithPath: "\(fallbackPath).\(simulatorID)",
+            isDirectory: true
+        )
     }
 }
 
@@ -1194,6 +1253,80 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         XCTAssertEqual(result, AXFocusAcquisitionMatch(matched: false, attempts: 3))
         XCTAssertEqual(requests, 3)
+    }
+
+    func testUITestArtifactDirectorySelectorSeparatesSimulatorIdentities() {
+        let first = UITestArtifactDirectorySelector.directory(simulatorID: "simulator-a")
+        let second = UITestArtifactDirectorySelector.directory(simulatorID: "simulator-b")
+
+        XCTAssertEqual(first.path, "/private/tmp/making-tracks-artifacts.simulator-a")
+        XCTAssertEqual(second.path, "/private/tmp/making-tracks-artifacts.simulator-b")
+        XCTAssertNotEqual(first, second)
+    }
+
+    func testUITestArtifactDirectorySelectorUsesDocumentedFallbackWithoutIdentity() {
+        let fallback = URL(fileURLWithPath: "/private/tmp/making-tracks-artifacts", isDirectory: true)
+
+        XCTAssertEqual(UITestArtifactDirectorySelector.directory(simulatorID: nil), fallback)
+        XCTAssertEqual(UITestArtifactDirectorySelector.directory(simulatorID: ""), fallback)
+    }
+
+    func testAXBoundedScrollerSkipsScrollWhenAlreadyHittable() {
+        var scrolls = 0
+        let result = AXBoundedScroller.acquire(
+            maxScrolls: 3,
+            observe: { .hittable },
+            scroll: { scrolls += 1 }
+        )
+
+        XCTAssertEqual(
+            result,
+            AXScrollMatch(matched: true, scrolls: 0, observation: .hittable)
+        )
+        XCTAssertEqual(scrolls, 0)
+    }
+
+    func testAXBoundedScrollerReachesHittableWithinBound() {
+        var observations: [AXScrollObservation] = [
+            .missing,
+            .presentNotHittable,
+            .hittable,
+        ]
+        var scrolls = 0
+        let result = AXBoundedScroller.acquire(
+            maxScrolls: 3,
+            observe: { observations.removeFirst() },
+            scroll: { scrolls += 1 }
+        )
+
+        XCTAssertEqual(
+            result,
+            AXScrollMatch(matched: true, scrolls: 2, observation: .hittable)
+        )
+        XCTAssertEqual(scrolls, 2)
+        XCTAssertTrue(observations.isEmpty)
+    }
+
+    func testAXBoundedScrollerReportsExactBoundAndFinalObservation() {
+        var observations: [AXScrollObservation] = [
+            .missing,
+            .missing,
+            .presentNotHittable,
+            .presentNotHittable,
+        ]
+        var scrolls = 0
+        let result = AXBoundedScroller.acquire(
+            maxScrolls: 3,
+            observe: { observations.removeFirst() },
+            scroll: { scrolls += 1 }
+        )
+
+        XCTAssertEqual(
+            result,
+            AXScrollMatch(matched: false, scrolls: 3, observation: .presentNotHittable)
+        )
+        XCTAssertEqual(scrolls, 3)
+        XCTAssertTrue(observations.isEmpty)
     }
 
     func testKeyboardFocusProxyUsesSoftwareKeyboardWhenPresent() {
@@ -2107,7 +2240,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let rootListRow = app.buttons.matching(identifierPrefix: "lists.row.").matching(
             NSPredicate(format: "label CONTAINS %@", rootListName)
         ).firstMatch
-        XCTAssertTrue(scrollToHittable(rootListRow, in: app))
+        let rootListScrollLimit = 10
+        let rootListScroll = scrollToHittableMatch(
+            rootListRow,
+            in: app,
+            maxScrolls: rootListScrollLimit
+        )
+        XCTAssertTrue(
+            rootListScroll.matched,
+            "lists.row.* label CONTAINS \(rootListName) was not hittable after "
+                + "\(rootListScrollLimit) scrolls; final observation: "
+                + "\(rootListScroll.observation.rawValue) — known to amplify under "
+                + "concurrent-gate load, see #600 cap-2 rep1"
+        )
+        guard rootListScroll.matched else { return }
         rootListRow.tap()
         XCTAssertTrue(app.navigationBars[rootListName].waitForExistence(timeout: 5))
         XCTAssertTrue(app.collectionViews["lists.detail.surface.collection"].exists)
@@ -7439,19 +7585,12 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
     }
 
-    private func uiTestArtifactDirectory(for artifactName: String) -> URL {
+    private func uiTestArtifactDirectory(for _: String) -> URL {
         let environment = ProcessInfo.processInfo.environment
-        let usesSimulatorScopedDirectory =
-            artifactName.hasPrefix("snow-theme-lock-")
-                || artifactName.hasPrefix("place-card-press-inset-")
-                || artifactName.hasPrefix("explore-row-press-")
-        let simulatorID = usesSimulatorScopedDirectory
-            ? (environment["SIMULATOR_UDID"] ?? environment["MT_SIM_LOCK_UDID"])
-                .flatMap { $0.isEmpty ? nil : $0 }
-            : nil
-        let path = simulatorID.map { "/private/tmp/making-tracks-artifacts.\($0)" }
-            ?? "/private/tmp/making-tracks-artifacts"
-        return URL(fileURLWithPath: path, isDirectory: true)
+        let simulatorID = ["SIMULATOR_UDID", "MT_SIM_LOCK_UDID"].lazy.compactMap { key in
+            environment[key].flatMap { $0.isEmpty ? nil : $0 }
+        }.first
+        return UITestArtifactDirectorySelector.directory(simulatorID: simulatorID)
     }
 
     @discardableResult
@@ -7472,18 +7611,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
     @discardableResult
     private func scrollToHittable(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
-        if element.waitForExistence(timeout: 2), element.isHittable {
-            return true
-        }
+        scrollToHittableMatch(element, in: app, maxScrolls: 5).matched
+    }
 
-        for _ in 0..<5 {
-            scrollTarget(in: app).swipeUp()
-            if element.waitForExistence(timeout: 1), element.isHittable {
-                return true
+    private func scrollToHittableMatch(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxScrolls: Int
+    ) -> AXScrollMatch {
+        var observationTimeout: TimeInterval = 2
+
+        return AXBoundedScroller.acquire(
+            maxScrolls: maxScrolls,
+            observe: {
+                guard element.waitForExistence(timeout: observationTimeout) else {
+                    return .missing
+                }
+                return element.isHittable ? .hittable : .presentNotHittable
+            },
+            scroll: {
+                scrollTarget(in: app).swipeUp()
+                observationTimeout = 1
             }
-        }
-
-        return element.exists && element.isHittable
+        )
     }
 
     @discardableResult
