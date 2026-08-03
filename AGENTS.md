@@ -65,6 +65,10 @@ The script takes a stable per-simulator lock derived from the destination UDID, 
 same simulator serialize. A stable global counting semaphore caps aggregate gate concurrency at
 `MT_GATE_MAX_CONCURRENT` (default `2`); different simulators may run together only within that cap. The
 host ceiling is `2`; the setting may lower concurrency to `1` but cannot enlarge it.
+**Measurement-window exception:** within a planner-announced #600 measurement window, gate
+concurrency may exceed the ceiling; outside such a window the ceiling binds unchanged, and the
+production ceiling changes only by the evidence-based amendment #600 exists to produce. Rob's
+authorizing ruling is recorded verbatim in `docs/process/coordination.md` → *Standing items*.
 Cap `1` takes an exclusive admission lock, so it waits for both ordinary gates and prevents new ones; use
 it for fleet-wide maintenance.
 `MT_SIM_LOCK_WAIT` is a per-stage timeout for the simulator lock, admission policy, and global slot; a
