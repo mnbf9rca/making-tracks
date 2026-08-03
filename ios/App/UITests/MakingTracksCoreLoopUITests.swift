@@ -1510,10 +1510,28 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(plan.fallbackNormalizedPositions, [0.99, 0.995, 1.0])
     }
 
-    func testFixturePinTapWaitsForNamedHittablePinAtAX5() {
+    func testFixturePinTapUsesNamedPinAfterMapRepositionAtAX5() {
         let app = launch(reset: true, accessibilityTextSize: true)
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
+        let pin = app.buttons["map.pin.\(placeID)"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 10))
+
+        let mapCenter = CGPoint(x: map.frame.midX, y: map.frame.midY)
+        var repositions = 0
+        while pin.frame.contains(mapCenter), repositions < 3 {
+            let start = map.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.58))
+            let end = map.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.25))
+            start.press(forDuration: 0.1, thenDragTo: end)
+            repositions += 1
+            XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        }
+
+        XCTAssertTrue(pin.isHittable)
+        XCTAssertFalse(pin.frame.contains(mapCenter))
+
+        tapFixtureCoordinate(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         tapFixturePin(in: map, app: app)
 
