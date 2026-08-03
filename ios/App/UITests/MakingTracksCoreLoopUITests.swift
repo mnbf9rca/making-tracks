@@ -333,6 +333,14 @@ private struct RenderedPixelRaster {
     }
 }
 
+private enum MyTracksRenderedComparisonFrame {
+    static func appOwnedIntersection(light: CGRect, dark: CGRect) -> CGRect {
+        light.intersection(dark).inset(
+            by: UIEdgeInsets(top: 1, left: 1, bottom: 34, right: 1)
+        )
+    }
+}
+
 @MainActor
 private struct MyTracksAppearanceCapture {
     let raster: RenderedPixelRaster
@@ -1290,6 +1298,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         ])
 
         XCTAssertEqual(directory.path, "/private/tmp/making-tracks-artifacts.xcode-simulator")
+    }
+
+    func testMyTracksRenderedComparisonFrameExcludesBottomSystemChrome() {
+        let trackSurface = CGRect(x: 0, y: 100, width: 402, height: 774)
+
+        XCTAssertEqual(
+            MyTracksRenderedComparisonFrame.appOwnedIntersection(
+                light: trackSurface,
+                dark: trackSurface
+            ),
+            CGRect(x: 1, y: 101, width: 400, height: 739)
+        )
     }
 
     func testAXBoundedScrollerSkipsScrollWhenAlreadyHittable() {
@@ -2598,9 +2618,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         XCTAssertEqual(light.trackSurfaceFrame, dark.trackSurfaceFrame)
-        let comparisonFrame = light.trackSurfaceFrame
-            .intersection(dark.trackSurfaceFrame)
-            .insetBy(dx: 1, dy: 1)
+        let comparisonFrame = MyTracksRenderedComparisonFrame.appOwnedIntersection(
+            light: light.trackSurfaceFrame,
+            dark: dark.trackSurfaceFrame
+        )
         guard let differenceCount = light.raster.differingPixelCount(
             comparedTo: dark.raster,
             in: comparisonFrame
