@@ -103,6 +103,8 @@ When the spec doesn't settle a judgment call:
 
 ## Standing items
 
+0. **Measurement-window ceiling exception** (Rob, 2026-08-02, verbatim): *"authorize gate concurrency above 2 within planner-authorized #600 measurement windows only, pending the evidence-based amendment."* The AGENTS.md ceiling rule carries the timeless form; this entry is its provenance.
+
 Durable facts the fleet operates under (moved here from planner's session memory so a restart preserves them).
 
 1. **Signing** (ruleset, verified 2026-07-23): long-lived branches require signed commits. Agents sign via the 1Password socket, biometric on first use per session; tree-preserving re-sign amends carry gate evidence forward.
