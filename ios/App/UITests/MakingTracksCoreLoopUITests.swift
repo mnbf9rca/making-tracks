@@ -1510,13 +1510,23 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(plan.fallbackNormalizedPositions, [0.99, 0.995, 1.0])
     }
 
+    func testFixturePinTapWaitsForNamedHittablePinAtAX5() {
+        let app = launch(reset: true, accessibilityTextSize: true)
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+
+        tapFixturePin(in: map, app: app)
+
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+    }
+
     func testCardTogglesPersistAndRestyleMapPin() {
         let app = launch(reset: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        tapFixturePin(in: map)
+        tapFixturePin(in: map, app: app)
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         attachScreenshot(named: "card-open")
 
@@ -1546,7 +1556,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let relaunchedMap = relaunched.otherElements["map.surface"]
         XCTAssertTrue(relaunchedMap.waitForExistence(timeout: 10))
         XCTAssertEqual(relaunched.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
-        tapFixturePin(in: relaunchedMap)
+        tapFixturePin(in: relaunchedMap, app: relaunched)
         XCTAssertTrue(relaunched.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertEqual(relaunched.buttons["place-card.save"].label, "Saved")
         XCTAssertTrue(waitForButtonLabel("Loved", identifier: "place-card.loved", in: relaunched))
@@ -3951,7 +3961,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
 
         XCTAssertTrue(waitForNonExistence(of: app.staticTexts["Hidden — Undo"], timeout: 7))
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
     }
 
@@ -3988,7 +3998,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["debug.hide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(true, in: app))
 
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         openSecondFixtureCard(in: map, app: app)
@@ -4065,7 +4075,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForButtonLabel("Show all", identifier: "explore.scope.categories.toggle-all", in: app))
         app.buttons["Close"].tap()
 
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
         tapSecondFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
@@ -4090,7 +4100,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["debug.hide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(true, in: app))
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         openScope(in: app)
@@ -6725,7 +6735,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForNonExistence(of: sheet, timeout: 5))
     }
 
-    private func tapFixturePin(in map: XCUIElement) {
+    private func tapFixturePin(in map: XCUIElement, app: XCUIApplication) {
+        openFixtureCard(in: map, app: app)
+    }
+
+    private func tapFixtureCoordinate(in map: XCUIElement) {
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
