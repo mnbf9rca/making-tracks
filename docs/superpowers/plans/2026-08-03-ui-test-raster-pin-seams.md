@@ -14,7 +14,8 @@
 - Preserve exact zero-difference comparison inside app-owned raster bounds; do not add tolerance.
 - No sleeps, unbounded retries, app-side sentinels or raw simulator commands.
 - Every simulator command runs through `./scripts/sim-lock.sh --seat codex3`.
-- Before every simulator launch, require `pmset -g batt` to report `AC Power` and no `discharging`, require `system_profiler SPPowerDataType` to report `Current Power Source: Yes` and `Low Power Mode: No`, and log source, battery percentage/state and low-power-mode state.
+- Before every simulator launch, require `pmset -g batt` to report `AC Power` and no `discharging`; log source, battery percentage/state and `pmset` power mode; fail only for power mode 1 (Low Power), while modes 0 and 2 (High Power) pass. If `pmset -g live` omits the mode, fail closed unless the active AC profile from `pmset -g custom` reports `lowpowermode` 0 or 2 and `pmset -g ps -xml` reports `LPM Active=false`.
+- Never use `SPPowerDataType`'s `Low Power Mode` field as the power-mode authority on this high-power-capable host: it renders `Yes` for mode 2 (High Power) as well as mode 1 (Low Power).
 - Use one reusable DerivedData directory for codex3 and remove each result bundle after extracting counts.
 - Issue #600 CAP3 remains held until #611 merges and planner announces the merge.
 
@@ -265,7 +266,7 @@ Expected baseline family: 518 tests, 0 failures. Restore any mechanical `Package
 
 - [ ] **Step 2: Verify launch power and seat state**
 
-Record `pmset -g batt`, `system_profiler SPPowerDataType`, `pmset -g custom`, `memory_pressure`, `vm_stat`, `uptime`, and `df -h /private/tmp`. Require AC, no discharging, `Low Power Mode: No`, and `./scripts/sim-lock.sh --seat codex3 --status` reporting FREE.
+Record `pmset -g batt`, `pmset -g live`, `pmset -g custom`, `pmset -g ps -xml`, `memory_pressure`, `vm_stat`, `uptime`, and `df -h /private/tmp`. Require AC, no discharging, a reported power mode other than 1, and `./scripts/sim-lock.sh --seat codex3 --status` reporting FREE. If `pmset -g live` omits the mode, fail closed unless the active AC profile reports `lowpowermode` 0 or 2 and `LPM Active=false`. The runner log must note that `pmset -g live` can expose `powermode` in an unsandboxed shell yet omit it in the agent execution environment. Treat power mode 2 as High Power and do not consult the misleading `SPPowerDataType` field.
 
 - [ ] **Step 3: Run one solo full gate**
 
