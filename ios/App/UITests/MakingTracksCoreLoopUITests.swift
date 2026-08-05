@@ -24,6 +24,20 @@ private enum AXScrollObservation: String, Equatable {
     case hittable
 }
 
+private enum FixturePinRepositionObservation {
+    static func classify(
+        exists: Bool,
+        isHittable: Bool,
+        frameContainsMapCenter: Bool
+    ) -> AXScrollObservation {
+        guard exists else { return .missing }
+        guard isHittable, !frameContainsMapCenter else {
+            return .presentNotHittable
+        }
+        return .hittable
+    }
+}
+
 private struct AXScrollMatch: Equatable {
     let matched: Bool
     let scrolls: Int
@@ -1381,6 +1395,17 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(observations.isEmpty)
     }
 
+    func testFixturePinRepositionObservationRejectsOffCentreNonHittablePin() {
+        XCTAssertEqual(
+            FixturePinRepositionObservation.classify(
+                exists: true,
+                isHittable: false,
+                frameContainsMapCenter: false
+            ),
+            .presentNotHittable
+        )
+    }
+
     func testKeyboardFocusProxyUsesSoftwareKeyboardWhenPresent() {
         XCTAssertEqual(
             KeyboardFocusProxySelector.observe(
@@ -1529,13 +1554,35 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(pin.waitForExistence(timeout: 10))
 
         let mapCenter = CGPoint(x: map.frame.midX, y: map.frame.midY)
-        var repositions = 0
-        while pin.frame.contains(mapCenter), repositions < 3 {
-            let start = map.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.58))
-            let end = map.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.25))
-            start.press(forDuration: 0.1, thenDragTo: end)
-            repositions += 1
-            XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        let match = AXBoundedScroller.acquire(
+            maxScrolls: 3,
+            observe: {
+                let exists = pin.waitForExistence(timeout: 5)
+                return FixturePinRepositionObservation.classify(
+                    exists: exists,
+                    isHittable: exists && pin.isHittable,
+                    frameContainsMapCenter: exists && pin.frame.contains(mapCenter)
+                )
+            },
+            scroll: {
+                let start = map.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.08, dy: 0.58)
+                )
+                let end = map.coordinate(
+                    withNormalizedOffset: CGVector(dx: 0.08, dy: 0.25)
+                )
+                start.press(forDuration: 0.1, thenDragTo: end)
+            }
+        )
+        guard match.matched else {
+            XCTFail(
+                "Fixture accessibility pin map.pin.\(placeID) did not become hittable "
+                    + "outside the captured map centre after \(match.scrolls) bounded map "
+                    + "repositions; final=\(match.observation), exists=\(pin.exists), "
+                    + "hittable=\(pin.isHittable), pinFrame=\(pin.frame), "
+                    + "mapCenter=\(mapCenter), mapFrame=\(map.frame)"
+            )
+            return
         }
 
         XCTAssertTrue(pin.isHittable)
