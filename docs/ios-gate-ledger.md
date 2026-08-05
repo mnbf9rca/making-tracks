@@ -15,12 +15,21 @@ The default and host-wide ceiling are `2`; operators may lower the setting to `1
 enlarge it. GitHub Actions creates ephemeral simulators outside this seat table and supplies its
 destination and explicit non-temporary DerivedData override through the Actions-only release-gate path.
 
-| Seat | Cache-root DerivedData | Simulator | Destination |
-| --- | --- | --- | --- |
-| `codex1` | `$HOME/Library/Caches/making-tracks-gates/codex1` | `mt-gate-codex1` | `platform=iOS Simulator,id=8749271C-95FD-4270-A754-401F77E7AEB6` |
-| `codex2` | `$HOME/Library/Caches/making-tracks-gates/codex2` | `mt-gate-codex2` | `platform=iOS Simulator,id=BACC2CF8-C1F8-4C92-B058-47B0AC0B128D` |
-| `codex3` | `$HOME/Library/Caches/making-tracks-gates/codex3` | `mt-gate-codex3` | `platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839` |
-| `codex4` | `$HOME/Library/Caches/making-tracks-gates/codex4` | `mt-gate-codex4` | `platform=iOS Simulator,id=42D1482C-DE04-49AA-990D-1884ED9B855D` |
+| Seat | Simulator | Destination |
+| --- | --- | --- |
+| `codex1` | `mt-gate-codex1` | `platform=iOS Simulator,id=8749271C-95FD-4270-A754-401F77E7AEB6` |
+| `codex2` | `mt-gate-codex2` | `platform=iOS Simulator,id=BACC2CF8-C1F8-4C92-B058-47B0AC0B128D` |
+| `codex3` | `mt-gate-codex3` | `platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839` |
+| `codex4` | `mt-gate-codex4` | `platform=iOS Simulator,id=42D1482C-DE04-49AA-990D-1884ED9B855D` |
+
+## Per-seat DerivedData roots
+
+| Seat | Cache-root DerivedData |
+| --- | --- |
+| `codex1` | `$HOME/Library/Caches/making-tracks-gates/codex1` |
+| `codex2` | `$HOME/Library/Caches/making-tracks-gates/codex2` |
+| `codex3` | `$HOME/Library/Caches/making-tracks-gates/codex3` |
+| `codex4` | `$HOME/Library/Caches/making-tracks-gates/codex4` |
 
 DerivedData never belongs under `/tmp` or `/private/tmp`; #612 guards both boundaries before Xcode runs.
 Stable lock files and result bundles may remain in `/private/tmp`; lock files are never deleted or

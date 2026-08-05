@@ -240,6 +240,8 @@ consumer_scripts=(
 
 CONSUMER_FAKE_BIN="$TMP/consumer-fake-bin"
 CONSUMER_CALL_LOG="$TMP/consumer-calls.log"
+CONSUMER_HOME="$(realpath "$TMP")/consumer-home"
+CONSUMER_DERIVED_DATA="$CONSUMER_HOME/Library/Caches/making-tracks-gates/codex1"
 mkdir -p "$CONSUMER_FAKE_BIN"
 # shellcheck disable=SC2016 # Expanded when the fake xcrun program runs.
 printf '%s\n' \
@@ -318,7 +320,9 @@ for consumer in "${consumer_scripts[@]}"; do
     MT_SIM_LOCK=1 \
     MT_SIM_LOCK_UDID="$FAKE_UDID" \
     MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
-    MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-consumer-contract \
+    MT_SIM_LOCK_SEAT=codex1 \
+    HOME="$CONSUMER_HOME" \
+    MT_RELEASE_GATE_DERIVED_DATA="$CONSUMER_DERIVED_DATA" \
     "$consumer" >/dev/null 2>&1
   consumer_rc=$?
   set -e
@@ -342,7 +346,9 @@ for consumer in "${consumer_scripts[@]}"; do
       MT_SIM_LOCK=1 \
       MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
       MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$FAKE_UDID" \
-      MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-consumer-contract \
+      MT_SIM_LOCK_SEAT=codex1 \
+      HOME="$CONSUMER_HOME" \
+      MT_RELEASE_GATE_DERIVED_DATA="$CONSUMER_DERIVED_DATA" \
       "$consumer" 2>&1
   )"
   consumer_rc=$?
