@@ -26,6 +26,8 @@ RELEASE_UDID_B="BBBBBBBB-BBBB-4BBB-8BBB-$RELEASE_PID_HEX"
 RELEASE_RUN_DIR_A="/private/tmp/release-gate-$RELEASE_UDID_A"
 RELEASE_RUN_DIR_B="/private/tmp/release-gate-$RELEASE_UDID_B"
 DANGLING_TMP_TARGET="/private/tmp/mt-612-dangling-$RELEASE_PID_HEX"
+UNSAFE_EXISTING_DERIVED_DATA="/private/tmp/mt-612-existing-$RELEASE_PID_HEX"
+UNSAFE_MISSING_DERIVED_DATA="/private/tmp/mt-612-missing-$RELEASE_PID_HEX"
 RELEASE_FIXTURE_HOME="$(realpath "$TMP")/release-fixture-home"
 RELEASE_MARKERS="$TMP/release-markers"
 TEST_LEDGER="$TMP/ios-gate-ledger.md"
@@ -72,7 +74,9 @@ cleanup() {
     "$RELEASE_LEGACY_RUN_DIR" \
     "$RELEASE_RUN_DIR_A" \
     "$RELEASE_RUN_DIR_B" \
-    "$DANGLING_TMP_TARGET"
+    "$DANGLING_TMP_TARGET" \
+    "$UNSAFE_EXISTING_DERIVED_DATA" \
+    "$UNSAFE_MISSING_DERIVED_DATA"
 }
 trap cleanup EXIT
 
@@ -649,6 +653,50 @@ if [ "$temporary_xcode_path_rc" -ne 0 ] &&
 else
   record_fail "refuses a direct temporary xcodebuild DerivedData path before Xcode runs" \
     "status=$temporary_xcode_path_rc output='$(echo "$temporary_xcode_path_out" | head -1)' xcode=$(test -e "$CLI_XCODEBUILD_LOG" && echo ran || echo absent)"
+fi
+
+rm -f "$CLI_XCODEBUILD_LOG"
+set +e
+env_xcode_path_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 env xcodebuild test \
+      -derivedDataPath=/private/tmp/mt-612-env-xcode 2>&1
+)"
+env_xcode_path_rc=$?
+set -e
+if [ "$env_xcode_path_rc" -ne 0 ] &&
+   echo "$env_xcode_path_out" | grep -q '#612' &&
+   [ ! -e "$CLI_XCODEBUILD_LOG" ]; then
+  record_ok "refuses env xcodebuild temporary DerivedData before Xcode runs"
+else
+  record_fail "refuses env xcodebuild temporary DerivedData before Xcode runs" \
+    "status=$env_xcode_path_rc output='$(echo "$env_xcode_path_out" | head -1)' xcode=$(test -e "$CLI_XCODEBUILD_LOG" && echo ran || echo absent)"
+fi
+
+rm -f "$CLI_XCODEBUILD_LOG"
+set +e
+absolute_xcode_path_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 "$CLI_FAKE_BIN/xcodebuild" test \
+      -derivedDataPath /private/tmp/mt-612-absolute-xcode 2>&1
+)"
+absolute_xcode_path_rc=$?
+set -e
+if [ "$absolute_xcode_path_rc" -ne 0 ] &&
+   echo "$absolute_xcode_path_out" | grep -q '#612' &&
+   [ ! -e "$CLI_XCODEBUILD_LOG" ]; then
+  record_ok "refuses an absolute xcodebuild temporary DerivedData path before Xcode runs"
+else
+  record_fail "refuses an absolute xcodebuild temporary DerivedData path before Xcode runs" \
+    "status=$absolute_xcode_path_rc output='$(echo "$absolute_xcode_path_out" | head -1)' xcode=$(test -e "$CLI_XCODEBUILD_LOG" && echo ran || echo absent)"
 fi
 
 DANGLING_DIRECT_DERIVED_DATA="$TMP/safe-dangling-direct-derived-data"
@@ -1867,6 +1915,63 @@ for unsafe_derived_data in \
       "status=$unsafe_gate_rc output='$(echo "$unsafe_gate_out" | head -1)' xcode=$(test -e "$XCODEBUILD_LOG" && echo ran || echo absent)"
   fi
 done
+
+mkdir -p "$UNSAFE_EXISTING_DERIVED_DATA"
+printf '%s\n' sentinel >"$UNSAFE_EXISTING_DERIVED_DATA/sentinel"
+rm -f "$XCODEBUILD_LOG"
+set +e
+unsafe_existing_gate_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_SIM_LOCK_SEAT=codex1 \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_CLEAN_DERIVED_DATA=1 \
+    MT_RELEASE_GATE_DERIVED_DATA="$UNSAFE_EXISTING_DERIVED_DATA" \
+    MT_RELEASE_GATE_MODE=build \
+    "$RELEASE_GATE" 2>&1
+)"
+unsafe_existing_gate_rc=$?
+set -e
+if [ "$unsafe_existing_gate_rc" -ne 0 ] &&
+   echo "$unsafe_existing_gate_out" | grep -q '#612' &&
+   [ -f "$UNSAFE_EXISTING_DERIVED_DATA/sentinel" ] &&
+   [ ! -e "$XCODEBUILD_LOG" ]; then
+  record_ok "release gate refuses temporary DerivedData before pruning it"
+else
+  record_fail "release gate refuses temporary DerivedData before pruning it" \
+    "status=$unsafe_existing_gate_rc output='$(echo "$unsafe_existing_gate_out" | head -1)' sentinel=$(test -f "$UNSAFE_EXISTING_DERIVED_DATA/sentinel" && echo present || echo absent) xcode=$(test -e "$XCODEBUILD_LOG" && echo ran || echo absent)"
+fi
+
+rm -rf "$UNSAFE_MISSING_DERIVED_DATA"
+rm -f "$XCODEBUILD_LOG"
+set +e
+unsafe_missing_gate_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_SIM_LOCK_SEAT=codex1 \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_CLEAN_DERIVED_DATA=1 \
+    MT_RELEASE_GATE_DERIVED_DATA="$UNSAFE_MISSING_DERIVED_DATA" \
+    MT_RELEASE_GATE_MODE=build \
+    "$RELEASE_GATE" 2>&1
+)"
+unsafe_missing_gate_rc=$?
+set -e
+if [ "$unsafe_missing_gate_rc" -ne 0 ] &&
+   echo "$unsafe_missing_gate_out" | grep -q '#612' &&
+   [ ! -e "$UNSAFE_MISSING_DERIVED_DATA" ] &&
+   [ ! -e "$XCODEBUILD_LOG" ]; then
+  record_ok "release gate refuses temporary DerivedData before creating it"
+else
+  record_fail "release gate refuses temporary DerivedData before creating it" \
+    "status=$unsafe_missing_gate_rc output='$(echo "$unsafe_missing_gate_out" | head -1)' derived_data=$(test -e "$UNSAFE_MISSING_DERIVED_DATA" && echo created || echo absent) xcode=$(test -e "$XCODEBUILD_LOG" && echo ran || echo absent)"
+fi
 
 rm -f "$XCODEBUILD_LOG"
 set +e

@@ -451,11 +451,28 @@ command_has_destination() {
   return 1
 }
 
+normalize_xcodebuild_invocation() {
+  XCODEBUILD_COMMAND_INDEX=0
+
+  [ "$#" -gt 0 ] || return 0
+  case "${1##*/}" in
+    xcodebuild) XCODEBUILD_COMMAND_INDEX=1 ;;
+    env)
+      [ "$#" -ge 2 ] || return 0
+      case "${2##*/}" in
+        xcodebuild) XCODEBUILD_COMMAND_INDEX=2 ;;
+      esac
+      ;;
+  esac
+}
+
 validate_xcode_derived_data_paths() {
+  local xcodebuild_command_index="$1"
   local derived_data
 
-  [ "$#" -gt 0 ] && [ "$1" = "xcodebuild" ] || return 0
+  [ "$xcodebuild_command_index" -gt 0 ] || return 0
   shift
+  shift "$xcodebuild_command_index"
   while [ "$#" -gt 0 ]; do
     case "$1" in
       -derivedDataPath)
@@ -490,7 +507,8 @@ run_locked() {
   local simctl_verb
 
   [ "$#" -gt 0 ] || die "no command given"
-  if [ "$1" = "xcodebuild" ] && ! command_has_destination "$@"; then
+  normalize_xcodebuild_invocation "$@"
+  if [ "$XCODEBUILD_COMMAND_INDEX" -gt 0 ] && ! command_has_destination "$@"; then
     set -- "$@" -destination "$DESTINATION"
   fi
   if [ "$#" -ge 3 ] && [ "$1" = "xcrun" ] && [ "$2" = "simctl" ]; then
@@ -516,7 +534,7 @@ run_locked() {
   fi
   validate_command_destination "$@"
   set_derived_data_environment
-  validate_xcode_derived_data_paths "$@"
+  validate_xcode_derived_data_paths "$XCODEBUILD_COMMAND_INDEX" "$@"
   export MT_SIM_LOCK_SEAT="$SEAT"
   export MT_RELEASE_GATE_DERIVED_DATA
 
