@@ -335,6 +335,8 @@ private struct RenderedPixelRaster {
 
 private enum MyTracksRenderedComparisonFrame {
     static func appOwnedIntersection(light: CGRect, dark: CGRect) -> CGRect {
+        // Match visitDateSurfaceFrame's 34pt home-indicator exclusion while
+        // retaining every app-owned editor pixel in the comparison.
         light.intersection(dark).inset(
             by: UIEdgeInsets(top: 1, left: 1, bottom: 34, right: 1)
         )
