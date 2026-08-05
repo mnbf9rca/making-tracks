@@ -333,12 +333,21 @@ private struct RenderedPixelRaster {
     }
 }
 
+private enum MyTracksRenderedFrameGeometry {
+    static let systemOwnedBottomInset: CGFloat = 34
+}
+
 private enum MyTracksRenderedComparisonFrame {
     static func appOwnedIntersection(light: CGRect, dark: CGRect) -> CGRect {
-        // Match visitDateSurfaceFrame's 34pt home-indicator exclusion while
-        // retaining every app-owned editor pixel in the comparison.
+        // Match visitDateSurfaceFrame's home-indicator exclusion while retaining
+        // every app-owned editor pixel in the comparison.
         light.intersection(dark).inset(
-            by: UIEdgeInsets(top: 1, left: 1, bottom: 34, right: 1)
+            by: UIEdgeInsets(
+                top: 1,
+                left: 1,
+                bottom: MyTracksRenderedFrameGeometry.systemOwnedBottomInset,
+                right: 1
+            )
         )
     }
 }
@@ -6259,7 +6268,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             x: appFrame.minX,
             y: visitDateBack.frame.minY,
             width: appFrame.width,
-            height: appFrame.maxY - visitDateBack.frame.minY - 34
+            height: appFrame.maxY - visitDateBack.frame.minY
+                - MyTracksRenderedFrameGeometry.systemOwnedBottomInset
         )
 
         return MyTracksAppearanceCapture(
