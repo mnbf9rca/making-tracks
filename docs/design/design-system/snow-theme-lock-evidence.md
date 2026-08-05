@@ -44,7 +44,7 @@ The machine-readable source is [`snow-theme-lock-measurements.txt`](snow-theme-l
 
 ## Regeneration
 
-Run from the repository root. The script refuses to run outside the assigned simulator lock or under a different Xcode version, uses `/private/tmp/dd-codex2` by default, isolates exports by simulator (safe under the per-simulator lock), performs the focused Release gate, extracts the test counts, removes its exact result bundle, validates every source image before installing tracked output, and prints measurements plus SHA-256 digests.
+Run from the repository root. The script refuses to run outside the assigned simulator lock or under a different Xcode version, uses `$HOME/Library/Caches/making-tracks-gates/codex2` by default, isolates exports by simulator (safe under the per-simulator lock), performs the focused Release gate, extracts the test counts, removes its exact result bundle, validates every source image before installing tracked output, and prints measurements plus SHA-256 digests.
 
 ```bash
 ./scripts/sim-lock.sh --seat codex2 \

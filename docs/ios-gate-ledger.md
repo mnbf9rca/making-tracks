@@ -13,7 +13,7 @@ destination UDID.
 concurrently, but the global counting semaphore admits at most `MT_GATE_MAX_CONCURRENT` gates at once.
 The default and host-wide ceiling are `2`; operators may lower the setting to `1`, but callers cannot
 enlarge it. GitHub Actions creates ephemeral simulators outside this seat table and supplies its
-destination through the Actions-only release-gate path.
+destination and explicit non-temporary DerivedData override through the Actions-only release-gate path.
 
 | Seat | Simulator | Destination |
 | --- | --- | --- |
@@ -22,8 +22,35 @@ destination through the Actions-only release-gate path.
 | `codex3` | `mt-gate-codex3` | `platform=iOS Simulator,id=AC60FA71-9449-4F15-A259-5E4A3E832839` |
 | `codex4` | `mt-gate-codex4` | `platform=iOS Simulator,id=42D1482C-DE04-49AA-990D-1884ED9B855D` |
 
-Lock files are stable `/private/tmp` files and are never deleted or replaced. Same-simulator serialization
-and the global cap are separate gates: acquiring one never substitutes for the other.
+## Per-seat DerivedData roots
+
+| Seat | Cache-root DerivedData |
+| --- | --- |
+| `codex1` | `$HOME/Library/Caches/making-tracks-gates/codex1` |
+| `codex2` | `$HOME/Library/Caches/making-tracks-gates/codex2` |
+| `codex3` | `$HOME/Library/Caches/making-tracks-gates/codex3` |
+| `codex4` | `$HOME/Library/Caches/making-tracks-gates/codex4` |
+
+DerivedData never belongs under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's per-user temporary
+`/private/var/folders/*/T/` trees; #612 guards both entry points before Xcode runs. Result bundles remain
+temporary and follow the inherited cleanup rule.
+
+Stable coordination files live under
+`$HOME/Library/Application Support/making-tracks-gates/locks`, outside automatic temporary and cache
+cleanup jurisdictions. That location is the lock-stability invariant: lock files are never deleted or
+replaced. Opening an existing file for append and applying `flock` does not refresh its timestamps. Host
+verification after a healthy 53-minute gate found the simulator, admission-policy, and occupied slot
+inodes still carrying the same access/modify/change time from almost three days earlier. A `/tmp`
+janitor could therefore unlink a normally held old inode and let a second acquirer flock a replacement;
+gate duration provides no protection. Same-simulator serialization and the global cap are separate
+gates: acquiring one never substitutes for the other.
+
+Legacy `/private/tmp/making-tracks-*.lock` pathnames on this host are compatibility symlinks to those
+Application Support targets. Pre-cutover and current wrappers therefore flock the same inodes; never
+turn an alias back into a regular file. A lock-root transition on any replacement host requires a
+planner-announced fleet-quiet window, proof that every old inode is unheld, and post-cutover proof that
+each legacy pathname and target resolve to the same inode before wrapper operation resumes. Changing the
+code default without that one-namespace cutover creates two independent lock fleets and is prohibited.
 
 ### Fleet-exclusive maintenance
 

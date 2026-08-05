@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 DESTINATION="${MT_SIM_LOCK_DESTINATION:-}"
+SEAT="${MT_SIM_LOCK_SEAT:-}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-}"
 ARTIFACTS="/private/tmp/making-tracks-artifacts"
 OUTPUT="$ROOT/docs/design/design-system"
@@ -23,15 +24,17 @@ cleanup_results() {
   echo "capture-t2.8-implementation: MT_RELEASE_GATE_DERIVED_DATA is required" >&2
   exit 1
 }
-case "$DERIVED_DATA" in
-  /private/tmp/dd-*) ;;
-  *)
-    echo "capture-t2.8-implementation: derived data must be a stable /private/tmp/dd-* path" >&2
-    exit 1
-    ;;
-esac
 [ "${MT_SIM_LOCK:-}" = "1" ] || {
   echo "capture-t2.8-implementation: invoke through scripts/sim-lock.sh --seat <seat>" >&2
+  exit 1
+}
+[ -n "$SEAT" ] || {
+  echo "capture-t2.8-implementation: MT_SIM_LOCK_SEAT is required" >&2
+  exit 1
+}
+expected_derived_data="$HOME/Library/Caches/making-tracks-gates/$SEAT"
+[ "$DERIVED_DATA" = "$expected_derived_data" ] || {
+  echo "capture-t2.8-implementation: derived data must be the locked seat cache path: $expected_derived_data" >&2
   exit 1
 }
 

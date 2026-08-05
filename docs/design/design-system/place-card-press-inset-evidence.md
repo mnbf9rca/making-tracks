@@ -88,5 +88,5 @@ Its reserved exact command is:
 Regenerate this focused packet with:
 
 ```bash
-MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-codex4 ./scripts/sim-lock.sh --seat codex4 ./docs/design/design-system/regenerate-place-card-press-inset.sh
+MT_RELEASE_GATE_DERIVED_DATA=$HOME/Library/Caches/making-tracks-gates/codex4 ./scripts/sim-lock.sh --seat codex4 ./docs/design/design-system/regenerate-place-card-press-inset.sh
 ```

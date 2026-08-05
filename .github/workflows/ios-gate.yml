@@ -7,6 +7,7 @@ on:
       - ".github/workflows/ios-gate.yml"
       - ".github/ios-ui-test-shards.json"
       - "scripts/ios-test-shards.py"
+      - "scripts/derived-data-path.sh"
       - "scripts/release-gate.sh"
       - "ios/App/**"
       - "ios/Sources/**"

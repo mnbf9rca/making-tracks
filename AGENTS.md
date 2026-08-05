@@ -35,7 +35,12 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
   global lock, and commands containing its hardcoded UDID are superseded on this branch by *The simulators
   have one entry point* below and the seat table in `docs/ios-gate-ledger.md`. Their unaffected simulator
   safety and disk-hygiene rules still apply. The inherited weekly-cleanup procedure is also superseded;
-  fleet-wide maintenance uses the exclusive protocol in the iOS gate ledger.
+  fleet-wide maintenance uses the exclusive protocol in the iOS gate ledger. The iOS reusable seat
+  DerivedData root is `$HOME/Library/Caches/making-tracks-gates/<seat>`; a root that canonically resolves
+  under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's per-user temporary `.../T/` tree is refused because
+  of #612. Result bundles retain the inherited temporary-storage cleanup rule. Stable coordination lock
+  files live under `$HOME/Library/Application Support/making-tracks-gates/locks`, outside automatic
+  temporary and cache cleanup jurisdictions; never delete, replace, or relocate one as recovery.
 
 ## CI on this branch
 

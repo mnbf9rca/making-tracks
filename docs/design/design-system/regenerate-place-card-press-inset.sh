@@ -6,7 +6,7 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 destination="${MT_SIM_LOCK_DESTINATION:-}"
 lock_udid="${MT_SIM_LOCK_UDID:-}"
-derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-/private/tmp/dd-codex4}"
+derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-$HOME/Library/Caches/making-tracks-gates/codex4}"
 output_dir="$repo_root/docs/design/design-system"
 analyzer="$output_dir/measure-place-card-press.swift"
 artifact_dir=""
@@ -104,7 +104,7 @@ run_host_self_test() {
   if MT_SIM_LOCK=1 \
     MT_SIM_LOCK_UDID="$alternate_uuid" \
     MT_SIM_LOCK_DESTINATION="$alternate_destination" \
-    MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/dd-codex4 \
+    MT_RELEASE_GATE_DERIVED_DATA="$HOME/Library/Caches/making-tracks-gates/codex4" \
     MT_PRESS_EXTERNAL_CALL_LOG="$external_call_log" \
     PATH="$mock_bin:$PATH" \
       /bin/bash "$repo_root/docs/design/design-system/regenerate-place-card-press-inset.sh" \
@@ -582,7 +582,7 @@ install_cleanup_traps
 [ "${MT_SIM_LOCK:-}" = "1" ] || die "must run inside scripts/sim-lock.sh --seat codex4"
 [ -n "$destination" ] || die "MT_SIM_LOCK_DESTINATION is required"
 [ -n "$lock_udid" ] || die "MT_SIM_LOCK_UDID is required"
-[ "$derived_data" = "/private/tmp/dd-codex4" ] || die "MT_RELEASE_GATE_DERIVED_DATA must be /private/tmp/dd-codex4"
+[ "$derived_data" = "$HOME/Library/Caches/making-tracks-gates/codex4" ] || die "MT_RELEASE_GATE_DERIVED_DATA must be $HOME/Library/Caches/making-tracks-gates/codex4"
 [ -f "$analyzer" ] || die "missing analyzer: $analyzer"
 
 destination_fields=",$destination,"
