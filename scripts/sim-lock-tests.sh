@@ -21,6 +21,7 @@ FLOCK_BIN="/opt/homebrew/bin/flock"
 RELEASE_FIXTURE_SEAT="sim-lock-test-$$"
 RELEASE_LEGACY_RUN_DIR="/private/tmp/release-gate-$RELEASE_FIXTURE_SEAT"
 RELEASE_PID_HEX="$(printf '%012X' "$$")"
+SAFE_TEST_ROOT="$HOME/Library/Caches/making-tracks-sim-lock-tests/$RELEASE_PID_HEX"
 RELEASE_UDID_A="AAAAAAAA-AAAA-4AAA-8AAA-$RELEASE_PID_HEX"
 RELEASE_UDID_B="BBBBBBBB-BBBB-4BBB-8BBB-$RELEASE_PID_HEX"
 RELEASE_RUN_DIR_A="/private/tmp/release-gate-$RELEASE_UDID_A"
@@ -31,9 +32,11 @@ UNSAFE_MISSING_DERIVED_DATA="/private/tmp/mt-612-missing-$RELEASE_PID_HEX"
 UNSAFE_ALIAS_EQUAL="/private/tmp/mt-612-alias-equal-$RELEASE_PID_HEX"
 UNSAFE_ALIAS_ANCESTOR="/private/tmp/mt-612-alias-ancestor-$RELEASE_PID_HEX"
 UNSAFE_ALIAS_DESCENDANT="/private/tmp/mt-612-alias-descendant-$RELEASE_PID_HEX"
-RELEASE_FIXTURE_HOME="$(realpath "$TMP")/release-fixture-home"
+RELEASE_FIXTURE_HOME="$SAFE_TEST_ROOT/release-fixture-home"
 RELEASE_MARKERS="$TMP/release-markers"
 TEST_LEDGER="$TMP/ios-gate-ledger.md"
+
+mkdir -p "$SAFE_TEST_ROOT"
 
 write_test_ledger() {
   local path="$1"
@@ -82,7 +85,8 @@ cleanup() {
     "$UNSAFE_MISSING_DERIVED_DATA" \
     "$UNSAFE_ALIAS_EQUAL" \
     "$UNSAFE_ALIAS_ANCESTOR" \
-    "$UNSAFE_ALIAS_DESCENDANT"
+    "$UNSAFE_ALIAS_DESCENDANT" \
+    "$SAFE_TEST_ROOT"
 }
 trap cleanup EXIT
 
@@ -220,6 +224,33 @@ mkdir -p "$LOCK_ROOT"
 
 echo "sim-lock seat contract:"
 
+# shellcheck disable=SC2016 # Assert the production source retains literal $HOME expansion.
+if grep -Fq 'LOCK_ROOT="$HOME/Library/Application Support/making-tracks-gates/locks"' "$SIM_LOCK"; then
+  record_ok "keeps live coordination locks outside automatic cleanup roots"
+else
+  record_fail "keeps live coordination locks outside automatic cleanup roots"
+fi
+
+DEFAULT_LOCK_HOME="$SAFE_TEST_ROOT/default-lock-home"
+DEFAULT_LOCK_ROOT="$DEFAULT_LOCK_HOME/Library/Application Support/making-tracks-gates/locks"
+set +e
+HOME="$DEFAULT_LOCK_HOME" \
+  MT_SIM_LOCK_TEST_MODE=1 \
+  MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+  MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+  "$SIM_LOCK" --seat codex1 true >/dev/null 2>&1
+default_lock_root_rc=$?
+set -e
+if [ "$default_lock_root_rc" -eq 0 ] &&
+   [ -f "$DEFAULT_LOCK_ROOT/making-tracks-sim-$FAKE_UDID.lock" ] &&
+   [ -f "$DEFAULT_LOCK_ROOT/making-tracks-gate-policy.lock" ] &&
+   [ -f "$DEFAULT_LOCK_ROOT/making-tracks-gate-slot-1.lock" ]; then
+  record_ok "creates every default coordination inode in Application Support"
+else
+  record_fail "creates every default coordination inode in Application Support" \
+    "status=$default_lock_root_rc root=$DEFAULT_LOCK_ROOT"
+fi
+
 set +e
 legacy_destination_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
@@ -238,7 +269,7 @@ else
     "status=$legacy_destination_rc output='$(echo "$legacy_destination_out" | head -1)'"
 fi
 
-LIVE_LEDGER_HOME="$(realpath "$TMP")/live-ledger-home"
+LIVE_LEDGER_HOME="$SAFE_TEST_ROOT/live-ledger-home"
 mkdir -p "$LIVE_LEDGER_HOME"
 set +e
 # shellcheck disable=SC2016 # Expanded by the wrapped child shell.
@@ -270,7 +301,7 @@ consumer_scripts=(
 
 CONSUMER_FAKE_BIN="$TMP/consumer-fake-bin"
 CONSUMER_CALL_LOG="$TMP/consumer-calls.log"
-CONSUMER_HOME="$(realpath "$TMP")/consumer-home"
+CONSUMER_HOME="$SAFE_TEST_ROOT/consumer-home"
 CONSUMER_DERIVED_DATA="$CONSUMER_HOME/Library/Caches/making-tracks-gates/codex1"
 mkdir -p "$CONSUMER_FAKE_BIN"
 # shellcheck disable=SC2016 # Expanded when the fake xcrun program runs.
@@ -564,7 +595,7 @@ CLI_FAKE_BIN="$TMP/cli-fake-bin"
 CLI_CASE_ALIAS_BIN="$TMP/cli-case-alias-bin"
 CLI_XCODEBUILD_LOG="$TMP/cli-xcodebuild.log"
 CLI_SIMCTL_LOG="$TMP/cli-simctl.log"
-DIRECT_XCODE_HOME="$(realpath "$TMP")/direct-xcode-home"
+DIRECT_XCODE_HOME="$SAFE_TEST_ROOT/direct-xcode-home"
 mkdir -p "$CLI_FAKE_BIN"
 mkdir -p "$CLI_CASE_ALIAS_BIN"
 mkdir -p "$DIRECT_XCODE_HOME"
@@ -692,6 +723,32 @@ else
   record_fail "refuses a direct temporary xcodebuild DerivedData path before Xcode runs" \
     "status=$temporary_xcode_path_rc output='$(echo "$temporary_xcode_path_out" | head -1)' xcode=$(test -e "$CLI_XCODEBUILD_LOG" && echo ran || echo absent)"
 fi
+
+for janitor_derived_data in \
+  /var/tmp/mt-612-direct-var-tmp \
+  "$TMP/mt-612-direct-user-temp"; do
+  rm -f "$CLI_XCODEBUILD_LOG"
+  set +e
+  janitor_xcode_path_out="$(
+    PATH="$CLI_FAKE_BIN:$PATH" \
+      MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+      MT_SIM_LOCK_TEST_MODE=1 \
+      MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+      MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+      "$SIM_LOCK" --seat codex1 xcodebuild test \
+        -derivedDataPath "$janitor_derived_data" 2>&1
+  )"
+  janitor_xcode_path_rc=$?
+  set -e
+  if [ "$janitor_xcode_path_rc" -ne 0 ] &&
+     echo "$janitor_xcode_path_out" | grep -q '#612' &&
+     [ ! -e "$CLI_XCODEBUILD_LOG" ]; then
+    record_ok "refuses system-managed temporary DerivedData before Xcode: $janitor_derived_data"
+  else
+    record_fail "refuses system-managed temporary DerivedData before Xcode: $janitor_derived_data" \
+      "status=$janitor_xcode_path_rc output='$(echo "$janitor_xcode_path_out" | head -1)' xcode=$(test -e "$CLI_XCODEBUILD_LOG" && echo ran || echo absent)"
+  fi
+done
 
 rm -f "$CLI_XCODEBUILD_LOG"
 set +e
@@ -943,7 +1000,7 @@ fi
 SEAT_TEST_LEDGER="$TMP/seat-ios-gate-ledger.md"
 write_test_ledger "$SEAT_TEST_LEDGER" "platform=iOS Simulator,id=$FAKE_UDID" \
   "| \`codex2\` | \`mt-gate-codex2\` | \`platform=iOS Simulator,id=$OTHER_SEAT_UDID\` |"
-SEAT_TEST_HOME="$(realpath "$TMP")/seat-home"
+SEAT_TEST_HOME="$SAFE_TEST_ROOT/seat-home"
 mkdir -p "$SEAT_TEST_HOME"
 # shellcheck disable=SC2016 # Expanded by the wrapped child shell.
 seat_default_c1="$(
@@ -2075,7 +2132,7 @@ else
     "status=$duplicate_gate_rc output='$(echo "$duplicate_gate_out" | head -1)'"
 fi
 
-SAFE_DERIVED_DATA="$(realpath "$TMP")/safe-derived-data"
+SAFE_DERIVED_DATA="$SAFE_TEST_ROOT/safe-derived-data"
 SYMLINKED_SAFE_PARENT="$TMP/safe-looking-parent"
 DANGLING_RELEASE_DERIVED_DATA="$TMP/safe-dangling-release-derived-data"
 ln -s /private/tmp "$SYMLINKED_SAFE_PARENT"
@@ -2084,6 +2141,8 @@ ln -s "$DANGLING_TMP_TARGET" "$DANGLING_RELEASE_DERIVED_DATA"
 for unsafe_derived_data in \
   /private/tmp/mt-612-release-gate-private \
   /tmp/mt-612-release-gate-tmp \
+  /var/tmp/mt-612-release-gate-var-tmp \
+  "$TMP/mt-612-release-gate-user-temp" \
   "$SYMLINKED_SAFE_PARENT/mt-612-release-gate-symlink"; do
   rm -f "$XCODEBUILD_LOG"
   set +e

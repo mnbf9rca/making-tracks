@@ -62,9 +62,15 @@ mt_refuse_tmp_derived_data() {
     echo "$prefix refused: cannot resolve DerivedData path: $path (#612)" >&2
     return 1
   }
+  # Load-bearing: these lower-case canonical patterns rely on realpath above
+  # normalizing case aliases and filesystem symlinks (including /tmp and
+  # /var/tmp). Any replacement canonicalizer must preserve that behavior or a
+  # case-only alias silently bypasses the temporary-root guard.
   case "$canonical/" in
-    /private/tmp/|/private/tmp/*)
-      echo "$prefix refused: DerivedData path resolves under /tmp or /private/tmp; use \$HOME/Library/Caches/making-tracks-gates/<seat> (#612)" >&2
+    /private/tmp/|/private/tmp/*|\
+    /private/var/tmp/|/private/var/tmp/*|\
+    /private/var/folders/*/T/|/private/var/folders/*/T/*)
+      echo "$prefix refused: DerivedData path resolves under system-managed temporary storage; use \$HOME/Library/Caches/making-tracks-gates/<seat> (#612)" >&2
       return 1
       ;;
   esac

@@ -37,8 +37,10 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
   safety and disk-hygiene rules still apply. The inherited weekly-cleanup procedure is also superseded;
   fleet-wide maintenance uses the exclusive protocol in the iOS gate ledger. The iOS reusable seat
   DerivedData root is `$HOME/Library/Caches/making-tracks-gates/<seat>`; a root that canonically resolves
-  under `/tmp` or `/private/tmp` is refused because of #612. That prohibition is only for DerivedData:
-  result bundles retain the inherited cleanup rule and stable lock files remain in `/private/tmp`.
+  under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's per-user temporary `.../T/` tree is refused because
+  of #612. Result bundles retain the inherited temporary-storage cleanup rule. Stable coordination lock
+  files live under `$HOME/Library/Application Support/making-tracks-gates/locks`, outside automatic
+  temporary and cache cleanup jurisdictions; never delete, replace, or relocate one as recovery.
 
 ## CI on this branch
 

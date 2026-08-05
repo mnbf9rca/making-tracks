@@ -27,7 +27,9 @@ SEAT=""
 DESTINATION=""
 UDID=""
 LOCK=""
-LOCK_ROOT="/private/tmp"
+# Coordination inodes must outlive every automatic temporary/cache janitor.
+# Deleting a held pathname lets a second process flock a replacement inode.
+LOCK_ROOT="$HOME/Library/Application Support/making-tracks-gates/locks"
 FLOCK_BIN="/opt/homebrew/bin/flock"
 LSOF_BIN="/usr/sbin/lsof"
 PGREP_BIN="/usr/bin/pgrep"
@@ -712,6 +714,7 @@ case "$SEAT" in
 esac
 shift 2
 select_seat
+mkdir -p "$LOCK_ROOT"
 
 case "${1:-}" in
   --status)   shift; status ;;

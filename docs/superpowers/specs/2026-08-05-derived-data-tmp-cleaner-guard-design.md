@@ -29,14 +29,16 @@ prevent the failure because the cleaner evaluates files individually.
 2. `sim-lock.sh` exports the selected logical seat and the seat-scoped default
    DerivedData path to its wrapped command.
 3. `sim-lock.sh` rejects an inherited `MT_RELEASE_GATE_DERIVED_DATA` or a direct
-   `xcodebuild -derivedDataPath` that canonically resolves to `/tmp` or
-   `/private/tmp`.
+   `xcodebuild -derivedDataPath` that canonically resolves to `/tmp`,
+   `/private/tmp`, `/var/tmp`, or macOS's per-user `/private/var/folders/*/T/`
+   temporary tree.
 4. `release-gate.sh` independently canonicalizes and rejects its selected
    DerivedData path below either temporary root before pruning, creating, or
    invoking Xcode.
 5. Every refusal fails closed, occurs before Xcode runs, and cites #612.
-6. Result bundles and stable lock files may remain under `/private/tmp`; the
-   prohibition is specifically for active or reusable DerivedData.
+6. Result bundles may remain under `/private/tmp`. Stable coordination files
+   live under `$HOME/Library/Application Support/making-tracks-gates/locks`,
+   outside automatic temporary and cache cleanup jurisdictions.
 7. GitHub Actions keeps its explicit ephemeral DerivedData override. Its path is
    validated by the same release-gate boundary.
 8. The frozen codex2 crime-scene DerivedData is not migrated or modified.
@@ -89,7 +91,7 @@ created to make validation succeed.
 
 Malformed, relative, unresolved-parent, or temporary-root DerivedData paths are
 configuration errors. The command exits nonzero before Xcode with a message of
-the form `refused: DerivedData path resolves under /tmp or /private/tmp; use
+the form `refused: DerivedData path resolves under system-managed temporary storage; use
 $HOME/Library/Caches/making-tracks-gates/<seat> (#612)`. Validation failure never
 falls back to the vulnerable legacy run-directory default.
 
@@ -98,8 +100,9 @@ falls back to the vulnerable legacy run-directory default.
 The host shell harness proves these behaviors before implementation:
 
 - each seat receives a distinct cache-root default even when `AM_ME` is absent;
-- `release-gate.sh` rejects explicit `/tmp`, explicit `/private/tmp`, and a safe
-  symlink whose canonical target is `/private/tmp`, before fake Xcode runs;
+- `release-gate.sh` rejects explicit `/tmp`, `/private/tmp`, `/var/tmp`, the
+  per-user `.../T/` tree, and a safe symlink whose canonical target is
+  `/private/tmp`, before fake Xcode runs;
 - `sim-lock.sh` rejects the same inherited override and a direct Xcode
   `-derivedDataPath` argument before the wrapped marker command runs;
 - safe explicit paths and the seat default reach fake Xcode unchanged;
@@ -114,7 +117,8 @@ host release gate runs once from the new codex3 cache root before the PR.
 ## Documentation and active callers
 
 The iOS `AGENTS.md` disk-hygiene delta and `docs/ios-gate-ledger.md` name the
-cache-root law once and retain `/private/tmp` only for locks and result bundles.
+cache-root law once, retain `/private/tmp` only for result bundles, and place
+stable coordination files in Application Support.
 Active regeneration scripts that consume `MT_RELEASE_GATE_DERIVED_DATA` use the
 injected seat default or the matching cache path; historical plan transcripts
 remain historical evidence and are not rewritten.

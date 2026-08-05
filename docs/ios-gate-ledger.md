@@ -31,10 +31,19 @@ destination and explicit non-temporary DerivedData override through the Actions-
 | `codex3` | `$HOME/Library/Caches/making-tracks-gates/codex3` |
 | `codex4` | `$HOME/Library/Caches/making-tracks-gates/codex4` |
 
-DerivedData never belongs under `/tmp` or `/private/tmp`; #612 guards both boundaries before Xcode runs.
-Stable lock files and result bundles may remain in `/private/tmp`; lock files are never deleted or
-replaced. Same-simulator serialization and the global cap are separate gates: acquiring one never
-substitutes for the other.
+DerivedData never belongs under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's per-user temporary
+`/private/var/folders/*/T/` trees; #612 guards both entry points before Xcode runs. Result bundles remain
+temporary and follow the inherited cleanup rule.
+
+Stable coordination files live under
+`$HOME/Library/Application Support/making-tracks-gates/locks`, outside automatic temporary and cache
+cleanup jurisdictions. That location is the lock-stability invariant: lock files are never deleted or
+replaced. Opening an existing file for append and applying `flock` does not refresh its timestamps. Host
+verification after a healthy 53-minute gate found the simulator, admission-policy, and occupied slot
+inodes still carrying the same access/modify/change time from almost three days earlier. A `/tmp`
+janitor could therefore unlink a normally held old inode and let a second acquirer flock a replacement;
+gate duration provides no protection. Same-simulator serialization and the global cap are separate
+gates: acquiring one never substitutes for the other.
 
 ### Fleet-exclusive maintenance
 

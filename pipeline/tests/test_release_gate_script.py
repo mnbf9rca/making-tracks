@@ -4,10 +4,24 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(os.environ.get("MT_RELEASE_GATE_SCRIPT", REPO_ROOT / "scripts" / "release-gate.sh"))
 UDID = "C4A64D49-24A2-4429-B6E2-AD9A14142A99"
+SAFE_TEST_HOME_ROOT = (
+    REPO_ROOT
+    / ".test-release-gate-homes"
+    / str(os.getpid())
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clean_safe_test_homes():
+    shutil.rmtree(SAFE_TEST_HOME_ROOT, ignore_errors=True)
+    yield
+    shutil.rmtree(SAFE_TEST_HOME_ROOT, ignore_errors=True)
 
 
 def _run(args, cwd: Path, **kwargs):
@@ -94,8 +108,8 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _env(fakebin: Path, log: Path) -> dict[str, str]:
-    home = log.parent / "home"
-    home.mkdir(exist_ok=True)
+    home = SAFE_TEST_HOME_ROOT / log.parent.name
+    home.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["PATH"] = f"{fakebin}:{env['PATH']}"
     env["HOME"] = str(home)
@@ -113,7 +127,7 @@ def _env(fakebin: Path, log: Path) -> dict[str, str]:
 
 
 def _derived_data(log: Path) -> Path:
-    return log.parent / "home/Library/Caches/making-tracks-gates/codex1"
+    return SAFE_TEST_HOME_ROOT / log.parent.name / "Library/Caches/making-tracks-gates/codex1"
 
 
 def test_release_gate_refuses_when_making_tracks_tests_target_is_missing(tmp_path):

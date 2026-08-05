@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Relocate every host gate's reusable DerivedData to a persistent per-seat user cache and fail closed before Xcode whenever a selected DerivedData path resolves below `/tmp` or `/private/tmp`.
+**Goal:** Relocate every host gate's reusable DerivedData to a persistent per-seat user cache, fail closed before Xcode for every macOS system-managed temporary root, and keep stable coordination inodes outside automatic cleanup jurisdictions.
 
 **Architecture:** A shared Bash library owns canonicalization and the #612 temporary-root predicate. `sim-lock.sh` injects the logical seat and safe default and validates caller/direct-Xcode paths; `release-gate.sh` independently validates its effective path before any DerivedData mutation.
 
@@ -12,7 +12,7 @@
 
 - Host defaults are exactly `$HOME/Library/Caches/making-tracks-gates/<seat>`.
 - The frozen codex2 crime-scene DD under `/private/tmp` is read-only evidence and is never migrated.
-- Result bundles and lock files may stay under `/private/tmp`; only active/reusable DerivedData is prohibited.
+- Result bundles may stay under `/private/tmp`; stable locks live under `$HOME/Library/Application Support/making-tracks-gates/locks`.
 - Both boundaries fail before Xcode and cite #612.
 - CI retains its explicit non-temporary DerivedData override.
 - The production gate ceiling remains 2 outside planner-announced #600 windows.
@@ -22,7 +22,7 @@
 ## File structure
 
 - Create `scripts/derived-data-path.sh`: shared canonical-path resolver and temporary-root refusal predicate.
-- Modify `scripts/sim-lock.sh`: export seat/default DD and validate inherited/direct-Xcode paths.
+- Modify `scripts/sim-lock.sh`: relocate stable locks, export seat/default DD, and validate inherited/direct-Xcode paths.
 - Modify `scripts/release-gate.sh`: use the per-seat cache default and independently validate before prune/create.
 - Modify `scripts/sim-lock-tests.sh`: real-boundary RED/GREEN coverage and seat isolation.
 - Modify `AGENTS.md` and `docs/ios-gate-ledger.md`: iOS-specific disk-hygiene law and operator reference.
@@ -45,7 +45,7 @@
 
 - [ ] **Step 1: Add release-gate RED cases to the existing fake-Xcode boundary**
 
-Add cases that set an explicit `/private/tmp/...`, `/tmp/...`, and a symlinked safe-looking parent targeting `/private/tmp`; each must expect nonzero, `#612`, and an absent fake-Xcode log. Add a safe explicit cache path that must reach fake Xcode unchanged.
+Add cases that set an explicit `/private/tmp/...`, `/tmp/...`, `/var/tmp/...`, a per-user `.../T/...` path, and a symlinked safe-looking parent targeting `/private/tmp`; each must expect nonzero, `#612`, and an absent fake-Xcode log. Add a safe explicit cache path that must reach fake Xcode unchanged.
 
 ```bash
 unsafe_gate_out="$(
@@ -87,8 +87,8 @@ all pre-existing assertions remain green.
 Create `scripts/derived-data-path.sh` with no top-level mutation. For an
 existing target, resolve it directly. For a new target, reject terminal `.` or
 `..`, require an existing parent, resolve the parent, and append the basename.
-Reject canonical results equal to or below `/private/tmp` (which also covers
-`/tmp` after resolution) with the assigned cache-root guidance and `#612`.
+Reject canonical results equal to or below `/private/tmp`, `/private/var/tmp`,
+or `/private/var/folders/*/T` with the assigned cache-root guidance and `#612`.
 
 ```bash
 mt_refuse_tmp_derived_data() {
@@ -101,8 +101,9 @@ mt_refuse_tmp_derived_data() {
     return 1
   }
   case "$canonical/" in
-    /private/tmp/|/private/tmp/*)
-      echo "$prefix refused: DerivedData path resolves under /tmp or /private/tmp; use \$HOME/Library/Caches/making-tracks-gates/<seat> (#612)" >&2
+    /private/tmp/|/private/tmp/*|/private/var/tmp/|/private/var/tmp/*|\
+    /private/var/folders/*/T/|/private/var/folders/*/T/*)
+      echo "$prefix refused: DerivedData path resolves under system-managed temporary storage; use \$HOME/Library/Caches/making-tracks-gates/<seat> (#612)" >&2
       return 1
       ;;
   esac
@@ -174,12 +175,14 @@ git commit -m "Keep gate DerivedData outside temporary storage"
 Amend `AGENTS.md`'s existing disk-hygiene delta rather than copying develop's
 rule. State that reusable seat DDs live at
 `$HOME/Library/Caches/making-tracks-gates/<seat>` and temporary-root DDs are
-refused because of #612. Keep result-bundle cleanup and lock-file rules intact.
+refused because of #612. Keep result-bundle cleanup intact and locate stable
+lock inodes in Application Support.
 
 - [ ] **Step 2: Update the gate ledger**
 
 Add the per-seat cache-root mapping beside the Host Gate Seats table and explain
-that `/private/tmp` remains valid for stable locks/result bundles but never DD.
+that `/private/tmp` remains valid only for disposable result bundles, never DD
+or stable coordination inodes.
 
 - [ ] **Step 3: Migrate active regeneration defaults and commands**
 
