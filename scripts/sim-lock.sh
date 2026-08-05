@@ -412,9 +412,14 @@ acquire_gate_slot() {
   done
 }
 
-validate_command_destination() {
+validate_xcode_destination() {
   local command_destination
   local command_udid
+  local xcodebuild_command_index="$1"
+
+  [ "$xcodebuild_command_index" -gt 0 ] || return 0
+  shift
+  shift "$xcodebuild_command_index"
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -441,7 +446,12 @@ validate_command_destination() {
   done
 }
 
-command_has_destination() {
+xcode_command_has_destination() {
+  local xcodebuild_command_index="$1"
+
+  [ "$xcodebuild_command_index" -gt 0 ] || return 1
+  shift
+  shift "$xcodebuild_command_index"
   while [ "$#" -gt 0 ]; do
     case "$1" in
       -destination|-destination=*) return 0 ;;
@@ -451,19 +461,100 @@ command_has_destination() {
   return 1
 }
 
+is_xcodebuild_basename() {
+  case "${1##*/}" in
+    [Xx][Cc][Oo][Dd][Ee][Bb][Uu][Ii][Ll][Dd]) return 0 ;;
+  esac
+  return 1
+}
+
+is_env_basename() {
+  case "${1##*/}" in
+    [Ee][Nn][Vv]) return 0 ;;
+  esac
+  return 1
+}
+
 normalize_xcodebuild_invocation() {
+  local command_index
+  local options=1
+
+  # argv is already tokenized. Skip only env forms whose operand boundaries
+  # are unambiguous; split-string and unknown options can hide the child and
+  # therefore fail closed before exec instead of becoming a shell parser here.
   XCODEBUILD_COMMAND_INDEX=0
 
   [ "$#" -gt 0 ] || return 0
-  case "${1##*/}" in
-    xcodebuild) XCODEBUILD_COMMAND_INDEX=1 ;;
-    env)
-      [ "$#" -ge 2 ] || return 0
-      case "${2##*/}" in
-        xcodebuild) XCODEBUILD_COMMAND_INDEX=2 ;;
+  if is_xcodebuild_basename "$1"; then
+    XCODEBUILD_COMMAND_INDEX=1
+    return 0
+  fi
+  is_env_basename "$1" || return 0
+
+  shift
+  command_index=2
+  while [ "$#" -gt 0 ]; do
+    if [ "$options" -eq 1 ]; then
+      case "$1" in
+        --)
+          options=0
+          shift
+          command_index=$((command_index + 1))
+          continue
+          ;;
+        -|-i|-v|--ignore-environment|--null|--debug)
+          shift
+          command_index=$((command_index + 1))
+          continue
+          ;;
+        -u|-P|-C|--unset|--chdir)
+          [ "$#" -ge 2 ] || die "wrapped env option $1 is missing its value"
+          shift 2
+          command_index=$((command_index + 2))
+          continue
+          ;;
+        -u?*|-P?*|-C?*|--unset=*|--chdir=*)
+          shift
+          command_index=$((command_index + 1))
+          continue
+          ;;
+        -S|--split-string|-S?*|--split-string=*)
+          die "wrapped command uses unsupported env option $1 before its child"
+          ;;
+        -*)
+          die "wrapped command uses unsupported env option $1 before its child"
+          ;;
       esac
-      ;;
-  esac
+    fi
+    case "$1" in
+      *=*)
+        options=0
+        shift
+        command_index=$((command_index + 1))
+        ;;
+      *)
+        if is_xcodebuild_basename "$1"; then
+          XCODEBUILD_COMMAND_INDEX="$command_index"
+        fi
+        return 0
+        ;;
+    esac
+  done
+}
+
+xcode_command_has_derived_data_path() {
+  local xcodebuild_command_index="$1"
+
+  [ "$xcodebuild_command_index" -gt 0 ] || return 1
+  shift
+  shift "$xcodebuild_command_index"
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -derivedDataPath|-derivedDataPath=*) return 0 ;;
+    esac
+    shift
+  done
+  return 1
 }
 
 validate_xcode_derived_data_paths() {
@@ -508,7 +599,8 @@ run_locked() {
 
   [ "$#" -gt 0 ] || die "no command given"
   normalize_xcodebuild_invocation "$@"
-  if [ "$XCODEBUILD_COMMAND_INDEX" -gt 0 ] && ! command_has_destination "$@"; then
+  if [ "$XCODEBUILD_COMMAND_INDEX" -gt 0 ] &&
+     ! xcode_command_has_destination "$XCODEBUILD_COMMAND_INDEX" "$@"; then
     set -- "$@" -destination "$DESTINATION"
   fi
   if [ "$#" -ge 3 ] && [ "$1" = "xcrun" ] && [ "$2" = "simctl" ]; then
@@ -532,9 +624,13 @@ run_locked() {
         ;;
     esac
   fi
-  validate_command_destination "$@"
+  validate_xcode_destination "$XCODEBUILD_COMMAND_INDEX" "$@"
   set_derived_data_environment
   validate_xcode_derived_data_paths "$XCODEBUILD_COMMAND_INDEX" "$@"
+  if [ "$XCODEBUILD_COMMAND_INDEX" -gt 0 ] &&
+     ! xcode_command_has_derived_data_path "$XCODEBUILD_COMMAND_INDEX" "$@"; then
+    set -- "$@" -derivedDataPath "$MT_RELEASE_GATE_DERIVED_DATA"
+  fi
   export MT_SIM_LOCK_SEAT="$SEAT"
   export MT_RELEASE_GATE_DERIVED_DATA
 

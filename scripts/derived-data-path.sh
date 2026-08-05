@@ -38,7 +38,10 @@ mt_canonical_derived_data_path() {
       echo "cannot resolve DerivedData parent: $path" >&2
       return 1
     }
-    canonical="$parent/$base"
+    case "$parent" in
+      /) canonical="/$base" ;;
+      *) canonical="$parent/$base" ;;
+    esac
   fi
 
   case "$canonical" in

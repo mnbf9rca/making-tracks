@@ -202,7 +202,6 @@ git merge-base --is-ancestor origin/ios HEAD ||
 lock_is_satisfied ||
   refuse "must be run through scripts/sim-lock.sh --seat <seat> (which holds the simulator lock)"
 
-mkdir -p "$RUN_DIR"
 if [ -z "$DERIVED_DATA" ]; then
   case "${MT_SIM_LOCK_SEAT:-}" in
     codex1|codex2|codex3|codex4) ;;
@@ -215,6 +214,7 @@ if [ -z "$DERIVED_DATA" ]; then
 fi
 DERIVED_DATA="$(mt_refuse_tmp_derived_data "$DERIVED_DATA" "release-gate:")" || exit 1
 
+mkdir -p "$RUN_DIR"
 prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
 [ "${MT_RELEASE_GATE_RESULT_BUNDLE:-}" = "" ] || RESULT_BUNDLE="$MT_RELEASE_GATE_RESULT_BUNDLE"

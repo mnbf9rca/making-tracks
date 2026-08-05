@@ -94,11 +94,15 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _env(fakebin: Path, log: Path) -> dict[str, str]:
+    home = log.parent / "home"
+    home.mkdir(exist_ok=True)
     env = os.environ.copy()
     env["PATH"] = f"{fakebin}:{env['PATH']}"
+    env["HOME"] = str(home)
     env["AM_ME"] = "test-agent"
     env["MT_SIM_LOCK"] = "1"
     env["MT_SIM_LOCK_UDID"] = UDID
+    env["MT_SIM_LOCK_SEAT"] = "codex1"
     env["MT_SIM_LOCK_DESTINATION"] = f"platform=iOS Simulator,id={UDID}"
     env["MT_RELEASE_GATE_TEST_MODE"] = "1"
     env["MT_RELEASE_GATE_RUN_DIR"] = str(log.parent / "release-gate-run")
@@ -106,6 +110,10 @@ def _env(fakebin: Path, log: Path) -> dict[str, str]:
     env.pop("GITHUB_ACTIONS", None)
     env.pop("MT_RELEASE_GATE_SKIP_LOCK", None)
     return env
+
+
+def _derived_data(log: Path) -> Path:
+    return log.parent / "home/Library/Caches/making-tracks-gates/codex1"
 
 
 def test_release_gate_refuses_when_making_tracks_tests_target_is_missing(tmp_path):
@@ -334,7 +342,7 @@ def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuildin
     stale_result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
     stale_result_bundle.mkdir(parents=True)
     (stale_result_bundle / "stale").write_text("stale\n", encoding="utf-8")
-    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    derived_data = _derived_data(log)
     derived_data.mkdir(parents=True)
     (derived_data / "stale").write_text("stale\n", encoding="utf-8")
 
@@ -354,7 +362,7 @@ def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuildin
         and "-project ios/App/MakingTracks.xcodeproj" in line
         and "-scheme MakingTracks" in line
         and f"-destination platform=iOS Simulator,id={UDID}" in line
-        and f"-derivedDataPath {log.parent}/release-gate-run/DerivedData" in line
+        and f"-derivedDataPath {_derived_data(log)}" in line
         for line in lines
     )
     assert any(
@@ -364,7 +372,7 @@ def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuildin
         and f"-destination platform=iOS Simulator,id={UDID}" in line
         and "-parallel-testing-enabled NO" in line
         and "-disable-concurrent-destination-testing" in line
-        and f"-derivedDataPath {log.parent}/release-gate-run/DerivedData" in line
+        and f"-derivedDataPath {_derived_data(log)}" in line
         for line in lines
     )
     assert any(
@@ -374,7 +382,7 @@ def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuildin
         and f"-destination platform=iOS Simulator,id={UDID}" in line
         and "-parallel-testing-enabled NO" in line
         and "-disable-concurrent-destination-testing" in line
-        and f"-derivedDataPath {log.parent}/release-gate-run/DerivedData" in line
+        and f"-derivedDataPath {_derived_data(log)}" in line
         and f"-resultBundlePath {log.parent}/release-gate-run/MakingTracksTests.xcresult" in line
         for line in lines
     )
@@ -438,7 +446,7 @@ def test_release_gate_test_mode_skips_builds_and_uses_only_testing_file(tmp_path
 def test_release_gate_prunes_stale_warm_derived_data_before_running(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
-    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    derived_data = _derived_data(log)
     stale = derived_data / "stale-cache"
     stale.mkdir(parents=True)
     old_timestamp = 1
@@ -455,7 +463,7 @@ def test_release_gate_prunes_stale_warm_derived_data_before_running(tmp_path):
 def test_release_gate_clean_derived_data_override_prunes_warm_cache(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
-    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    derived_data = _derived_data(log)
     stale = derived_data / "stale-cache"
     stale.mkdir(parents=True)
     env = _env(fakebin, log)
@@ -474,7 +482,7 @@ def test_release_gate_keeps_derived_data_when_xcodebuild_fails(tmp_path):
     fakebin, log = _fake_tools(tmp_path)
     env = _env(fakebin, log)
     env["MT_RELEASE_GATE_FAIL_XCODEBUILD"] = "1"
-    derived_data = log.parent / "release-gate-run" / "DerivedData"
+    derived_data = _derived_data(log)
     derived_data.mkdir(parents=True)
     (derived_data / "diagnostics").write_text("keep\n", encoding="utf-8")
 
