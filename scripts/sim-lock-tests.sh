@@ -15,6 +15,7 @@ RELEASE_GATE="$HERE/release-gate.sh"
 TMP="$(mktemp -d)"
 LOCK_ROOT="$TMP/locks"
 FAKE_UDID="11111111-1111-4111-8111-111111111111"
+OTHER_SEAT_UDID="22222222-2222-4222-8222-222222222222"
 LOCK="$LOCK_ROOT/making-tracks-sim-$FAKE_UDID.lock"
 FLOCK_BIN="/opt/homebrew/bin/flock"
 RELEASE_FIXTURE_SEAT="sim-lock-test-$$"
@@ -24,6 +25,7 @@ RELEASE_UDID_A="AAAAAAAA-AAAA-4AAA-8AAA-$RELEASE_PID_HEX"
 RELEASE_UDID_B="BBBBBBBB-BBBB-4BBB-8BBB-$RELEASE_PID_HEX"
 RELEASE_RUN_DIR_A="/private/tmp/release-gate-$RELEASE_UDID_A"
 RELEASE_RUN_DIR_B="/private/tmp/release-gate-$RELEASE_UDID_B"
+RELEASE_FIXTURE_HOME="$(realpath "$TMP")/release-fixture-home"
 RELEASE_MARKERS="$TMP/release-markers"
 TEST_LEDGER="$TMP/ios-gate-ledger.md"
 
@@ -577,6 +579,101 @@ else
     "status=$matching_destination_rc output='$matching_destination_out' args='$(head -1 "$CLI_XCODEBUILD_LOG" 2>/dev/null)'"
 fi
 
+DERIVED_DATA_MARKER="$TMP/derived-data-marker"
+rm -f "$DERIVED_DATA_MARKER"
+set +e
+# shellcheck disable=SC2016 # Expanded by the wrapped child shell.
+temporary_override_out="$(
+  MT_RELEASE_GATE_DERIVED_DATA=/private/tmp/mt-612-wrapper-override \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 sh -c 'touch "$1"' sh "$DERIVED_DATA_MARKER" 2>&1
+)"
+temporary_override_rc=$?
+set -e
+if [ "$temporary_override_rc" -ne 0 ] &&
+   echo "$temporary_override_out" | grep -q '#612' &&
+   [ ! -e "$DERIVED_DATA_MARKER" ]; then
+  record_ok "refuses an inherited temporary DerivedData override before the command runs"
+else
+  record_fail "refuses an inherited temporary DerivedData override before the command runs" \
+    "status=$temporary_override_rc output='$(echo "$temporary_override_out" | head -1)' marker=$(test -e "$DERIVED_DATA_MARKER" && echo present || echo absent)"
+fi
+
+rm -f "$CLI_XCODEBUILD_LOG"
+set +e
+temporary_xcode_path_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcodebuild test \
+      -derivedDataPath /tmp/mt-612-direct-xcode 2>&1
+)"
+temporary_xcode_path_rc=$?
+set -e
+if [ "$temporary_xcode_path_rc" -ne 0 ] &&
+   echo "$temporary_xcode_path_out" | grep -q '#612' &&
+   [ ! -e "$CLI_XCODEBUILD_LOG" ]; then
+  record_ok "refuses a direct temporary xcodebuild DerivedData path before Xcode runs"
+else
+  record_fail "refuses a direct temporary xcodebuild DerivedData path before Xcode runs" \
+    "status=$temporary_xcode_path_rc output='$(echo "$temporary_xcode_path_out" | head -1)' xcode=$(test -e "$CLI_XCODEBUILD_LOG" && echo ran || echo absent)"
+fi
+
+ROOT_PARENT_DERIVED_DATA="/mt-612-root-parent-$RELEASE_PID_HEX"
+rm -f "$CLI_XCODEBUILD_LOG"
+set +e
+root_parent_path_out="$(
+  PATH="$CLI_FAKE_BIN:$PATH" \
+    MT_TEST_XCODEBUILD_LOG="$CLI_XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 xcodebuild test \
+      -derivedDataPath "$ROOT_PARENT_DERIVED_DATA" 2>&1
+)"
+root_parent_path_rc=$?
+set -e
+if [ "$root_parent_path_rc" -eq 0 ] &&
+   grep -Fq -- "-derivedDataPath $ROOT_PARENT_DERIVED_DATA" "$CLI_XCODEBUILD_LOG"; then
+  record_ok "accepts a safe new DerivedData path whose parent is the filesystem root"
+else
+  record_fail "accepts a safe new DerivedData path whose parent is the filesystem root" \
+    "status=$root_parent_path_rc output='$(echo "$root_parent_path_out" | head -1)' args='$(head -1 "$CLI_XCODEBUILD_LOG" 2>/dev/null)'"
+fi
+
+SEAT_TEST_LEDGER="$TMP/seat-ios-gate-ledger.md"
+write_test_ledger "$SEAT_TEST_LEDGER" "platform=iOS Simulator,id=$FAKE_UDID" \
+  "| \`codex2\` | \`mt-gate-codex2\` | \`platform=iOS Simulator,id=$OTHER_SEAT_UDID\` |"
+SEAT_TEST_HOME="$(realpath "$TMP")/seat-home"
+mkdir -p "$SEAT_TEST_HOME"
+# shellcheck disable=SC2016 # Expanded by the wrapped child shell.
+seat_default_c1="$(
+  HOME="$SEAT_TEST_HOME" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$SEAT_TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 sh -c 'printf "%s|%s\\n" "$MT_SIM_LOCK_SEAT" "$MT_RELEASE_GATE_DERIVED_DATA"'
+)"
+# shellcheck disable=SC2016 # Expanded by the wrapped child shell.
+seat_default_c2="$(
+  HOME="$SEAT_TEST_HOME" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    MT_SIM_LOCK_TEST_LEDGER="$SEAT_TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex2 sh -c 'printf "%s|%s\\n" "$MT_SIM_LOCK_SEAT" "$MT_RELEASE_GATE_DERIVED_DATA"'
+)"
+if [ "$seat_default_c1" = "codex1|$SEAT_TEST_HOME/Library/Caches/making-tracks-gates/codex1" ] &&
+   [ "$seat_default_c2" = "codex2|$SEAT_TEST_HOME/Library/Caches/making-tracks-gates/codex2" ]; then
+  record_ok "exports distinct persistent DerivedData defaults for each seat"
+else
+  record_fail "exports distinct persistent DerivedData defaults for each seat" \
+    "codex1='$seat_default_c1' codex2='$seat_default_c2'"
+fi
+
 rm -f "$CLI_XCODEBUILD_LOG"
 set +e
 same_udid_different_destination_out="$(
@@ -640,7 +737,6 @@ else
     "status=$injected_simctl_erase_rc output='$injected_simctl_erase_out' args='$(head -1 "$CLI_SIMCTL_LOG" 2>/dev/null)'"
 fi
 
-OTHER_SEAT_UDID="22222222-2222-4222-8222-222222222222"
 rm -f "$CLI_SIMCTL_LOG"
 set +e
 explicit_simctl_target_out="$(
@@ -1684,6 +1780,64 @@ else
     "status=$duplicate_gate_rc output='$(echo "$duplicate_gate_out" | head -1)'"
 fi
 
+SAFE_DERIVED_DATA="$(realpath "$TMP")/safe-derived-data"
+SYMLINKED_SAFE_PARENT="$TMP/safe-looking-parent"
+ln -s /private/tmp "$SYMLINKED_SAFE_PARENT"
+
+for unsafe_derived_data in \
+  /private/tmp/mt-612-release-gate-private \
+  /tmp/mt-612-release-gate-tmp \
+  "$SYMLINKED_SAFE_PARENT/mt-612-release-gate-symlink"; do
+  rm -f "$XCODEBUILD_LOG"
+  set +e
+  unsafe_gate_out="$(
+    PATH="$FAKE_BIN:$PATH" \
+      MT_TEST_REPO_ROOT="$HERE/.." \
+      MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+      MT_SIM_LOCK=1 \
+      MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+      MT_SIM_LOCK_SEAT=codex1 \
+      MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+      MT_RELEASE_GATE_DERIVED_DATA="$unsafe_derived_data" \
+      MT_RELEASE_GATE_MODE=build \
+      "$RELEASE_GATE" 2>&1
+  )"
+  unsafe_gate_rc=$?
+  set -e
+  if [ "$unsafe_gate_rc" -ne 0 ] &&
+     echo "$unsafe_gate_out" | grep -q '#612' &&
+     [ ! -e "$XCODEBUILD_LOG" ]; then
+    record_ok "release gate refuses temporary DerivedData before Xcode: $unsafe_derived_data"
+  else
+    record_fail "release gate refuses temporary DerivedData before Xcode: $unsafe_derived_data" \
+      "status=$unsafe_gate_rc output='$(echo "$unsafe_gate_out" | head -1)' xcode=$(test -e "$XCODEBUILD_LOG" && echo ran || echo absent)"
+  fi
+done
+
+rm -f "$XCODEBUILD_LOG"
+set +e
+safe_gate_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_SIM_LOCK_SEAT=codex1 \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_DERIVED_DATA="$SAFE_DERIVED_DATA" \
+    MT_RELEASE_GATE_MODE=build \
+    "$RELEASE_GATE" 2>&1
+)"
+safe_gate_rc=$?
+set -e
+if [ "$safe_gate_rc" -eq 0 ] &&
+   grep -Fq -- "-derivedDataPath $SAFE_DERIVED_DATA" "$XCODEBUILD_LOG"; then
+  record_ok "release gate passes a safe explicit DerivedData path to Xcode unchanged"
+else
+  record_fail "release gate passes a safe explicit DerivedData path to Xcode unchanged" \
+    "status=$safe_gate_rc output='$(echo "$safe_gate_out" | head -1)' args='$(head -1 "$XCODEBUILD_LOG" 2>/dev/null)'"
+fi
+
 run_release_fixture() {
   local udid="$1"
   : >"$XCODEBUILD_LOG"
@@ -1692,21 +1846,22 @@ run_release_fixture() {
   MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
   MT_SIM_LOCK=1 \
   MT_SIM_LOCK_UDID="$udid" \
+  MT_SIM_LOCK_SEAT=codex1 \
   MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$udid" \
   MT_RELEASE_GATE_MODE=build \
-  AM_ME="$RELEASE_FIXTURE_SEAT" \
+  HOME="$RELEASE_FIXTURE_HOME" \
   "$RELEASE_GATE" >/dev/null 2>&1
   grep -o -- '-derivedDataPath [^ ]*' "$XCODEBUILD_LOG" | head -1
 }
 
 derived_a="$(run_release_fixture "$RELEASE_UDID_A")"
 derived_b="$(run_release_fixture "$RELEASE_UDID_B")"
-expected_a="-derivedDataPath /private/tmp/release-gate-$RELEASE_UDID_A/DerivedData"
-expected_b="-derivedDataPath /private/tmp/release-gate-$RELEASE_UDID_B/DerivedData"
+expected_a="-derivedDataPath $RELEASE_FIXTURE_HOME/Library/Caches/making-tracks-gates/codex1"
+expected_b="-derivedDataPath $RELEASE_FIXTURE_HOME/Library/Caches/making-tracks-gates/codex1"
 if [ "$derived_a" = "$expected_a" ] && [ "$derived_b" = "$expected_b" ]; then
-  record_ok "derives the exact default DerivedData path for each destination UDID"
+  record_ok "derives the exact persistent default DerivedData path for the selected seat"
 else
-  record_fail "derives the exact default DerivedData path for each destination UDID" \
+  record_fail "derives the exact persistent default DerivedData path for the selected seat" \
     "first='$derived_a' expected='$expected_a' second='$derived_b' expected='$expected_b'"
 fi
 

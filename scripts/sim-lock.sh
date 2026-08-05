@@ -19,6 +19,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091 # Runtime-relative shared library.
+# shellcheck source=derived-data-path.sh
+. "$SCRIPT_DIR/derived-data-path.sh"
 SEAT_LEDGER="$SCRIPT_DIR/../docs/ios-gate-ledger.md"
 SEAT=""
 DESTINATION=""
@@ -448,6 +451,41 @@ command_has_destination() {
   return 1
 }
 
+validate_xcode_derived_data_paths() {
+  local derived_data
+
+  [ "$#" -gt 0 ] && [ "$1" = "xcodebuild" ] || return 0
+  shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -derivedDataPath)
+        shift
+        [ "$#" -gt 0 ] || die "wrapped xcodebuild has -derivedDataPath without a value"
+        derived_data="$1"
+        ;;
+      -derivedDataPath=*) derived_data="${1#-derivedDataPath=}" ;;
+      *) shift; continue ;;
+    esac
+    mt_refuse_tmp_derived_data "$derived_data" "sim-lock:" >/dev/null || exit 1
+    shift
+  done
+}
+
+set_derived_data_environment() {
+  local cache_parent
+  local derived_data
+
+  cache_parent="$HOME/Library/Caches/making-tracks-gates"
+  mkdir -p "$cache_parent" || die "cannot create DerivedData cache parent: $cache_parent"
+
+  if [ -n "${MT_RELEASE_GATE_DERIVED_DATA:-}" ]; then
+    derived_data="$MT_RELEASE_GATE_DERIVED_DATA"
+  else
+    derived_data="$cache_parent/$SEAT"
+  fi
+  MT_RELEASE_GATE_DERIVED_DATA="$(mt_refuse_tmp_derived_data "$derived_data" "sim-lock:")" || exit 1
+}
+
 run_locked() {
   local simctl_verb
 
@@ -477,6 +515,10 @@ run_locked() {
     esac
   fi
   validate_command_destination "$@"
+  set_derived_data_environment
+  validate_xcode_derived_data_paths "$@"
+  export MT_SIM_LOCK_SEAT="$SEAT"
+  export MT_RELEASE_GATE_DERIVED_DATA
 
   # Re-entrancy for the same selected simulator. A nested command targeting a
   # different simulator must not inherit authority from the outer lock.

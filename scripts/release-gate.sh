@@ -12,6 +12,11 @@
 # DerivedData and the .xcresult for diagnosis.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091 # Runtime-relative shared library.
+# shellcheck source=derived-data-path.sh
+. "$SCRIPT_DIR/derived-data-path.sh"
+
 PROJECT="ios/App/MakingTracks.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
@@ -54,7 +59,7 @@ if [[ ! "$GATE_UDID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f
   exit 1
 fi
 RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-$GATE_UDID}"
-DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-$RUN_DIR/DerivedData}"
+DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
 MODE="${MT_RELEASE_GATE_MODE:-full}"
 ONLY_TESTING_FILE="${MT_RELEASE_GATE_ONLY_TESTING_FILE:-}"
@@ -198,6 +203,18 @@ lock_is_satisfied ||
   refuse "must be run through scripts/sim-lock.sh --seat <seat> (which holds the simulator lock)"
 
 mkdir -p "$RUN_DIR"
+if [ -z "$DERIVED_DATA" ]; then
+  case "${MT_SIM_LOCK_SEAT:-}" in
+    codex1|codex2|codex3|codex4) ;;
+    *)
+      refuse "MT_SIM_LOCK_SEAT is missing or invalid; run through scripts/sim-lock.sh --seat <seat>"
+      ;;
+  esac
+  DERIVED_DATA="$HOME/Library/Caches/making-tracks-gates/$MT_SIM_LOCK_SEAT"
+  mkdir -p "$HOME/Library/Caches/making-tracks-gates"
+fi
+DERIVED_DATA="$(mt_refuse_tmp_derived_data "$DERIVED_DATA" "release-gate:")" || exit 1
+
 prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
 [ "${MT_RELEASE_GATE_RESULT_BUNDLE:-}" = "" ] || RESULT_BUNDLE="$MT_RELEASE_GATE_RESULT_BUNDLE"
