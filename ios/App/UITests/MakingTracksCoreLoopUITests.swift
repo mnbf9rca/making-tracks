@@ -333,6 +333,25 @@ private struct RenderedPixelRaster {
     }
 }
 
+private enum MyTracksRenderedFrameGeometry {
+    static let systemOwnedBottomInset: CGFloat = 34
+}
+
+private enum MyTracksRenderedComparisonFrame {
+    static func appOwnedIntersection(light: CGRect, dark: CGRect) -> CGRect {
+        // Match visitDateSurfaceFrame's home-indicator exclusion while retaining
+        // every app-owned editor pixel in the comparison.
+        light.intersection(dark).inset(
+            by: UIEdgeInsets(
+                top: 1,
+                left: 1,
+                bottom: MyTracksRenderedFrameGeometry.systemOwnedBottomInset,
+                right: 1
+            )
+        )
+    }
+}
+
 @MainActor
 private struct MyTracksAppearanceCapture {
     let raster: RenderedPixelRaster
@@ -1292,6 +1311,18 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(directory.path, "/private/tmp/making-tracks-artifacts.xcode-simulator")
     }
 
+    func testMyTracksRenderedComparisonFrameExcludesBottomSystemChrome() {
+        let trackSurface = CGRect(x: 0, y: 100, width: 402, height: 774)
+
+        XCTAssertEqual(
+            MyTracksRenderedComparisonFrame.appOwnedIntersection(
+                light: trackSurface,
+                dark: trackSurface
+            ),
+            CGRect(x: 1, y: 101, width: 400, height: 739)
+        )
+    }
+
     func testAXBoundedScrollerSkipsScrollWhenAlreadyHittable() {
         var scrolls = 0
         let result = AXBoundedScroller.acquire(
@@ -1490,13 +1521,41 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(plan.fallbackNormalizedPositions, [0.99, 0.995, 1.0])
     }
 
+    func testFixturePinTapUsesNamedPinAfterMapRepositionAtAX5() {
+        let app = launch(reset: true, accessibilityTextSize: true)
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        let pin = app.buttons["map.pin.\(placeID)"]
+        XCTAssertTrue(pin.waitForExistence(timeout: 10))
+
+        let mapCenter = CGPoint(x: map.frame.midX, y: map.frame.midY)
+        var repositions = 0
+        while pin.frame.contains(mapCenter), repositions < 3 {
+            let start = map.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.58))
+            let end = map.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.25))
+            start.press(forDuration: 0.1, thenDragTo: end)
+            repositions += 1
+            XCTAssertTrue(pin.waitForExistence(timeout: 5))
+        }
+
+        XCTAssertTrue(pin.isHittable)
+        XCTAssertFalse(pin.frame.contains(mapCenter))
+
+        tapFixtureCoordinate(in: map)
+        XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
+
+        tapFixturePin(in: map, app: app)
+
+        XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
+    }
+
     func testCardTogglesPersistAndRestyleMapPin() {
         let app = launch(reset: true)
 
         let map = app.otherElements["map.surface"]
         XCTAssertTrue(map.waitForExistence(timeout: 10))
 
-        tapFixturePin(in: map)
+        tapFixturePin(in: map, app: app)
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         attachScreenshot(named: "card-open")
 
@@ -1526,7 +1585,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let relaunchedMap = relaunched.otherElements["map.surface"]
         XCTAssertTrue(relaunchedMap.waitForExistence(timeout: 10))
         XCTAssertEqual(relaunched.staticTexts["tracks.visit-count.\(placeID)"].label, "Tracks visits: 1")
-        tapFixturePin(in: relaunchedMap)
+        tapFixturePin(in: relaunchedMap, app: relaunched)
         XCTAssertTrue(relaunched.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         XCTAssertEqual(relaunched.buttons["place-card.save"].label, "Saved")
         XCTAssertTrue(waitForButtonLabel("Loved", identifier: "place-card.loved", in: relaunched))
@@ -2598,9 +2657,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         }
 
         XCTAssertEqual(light.trackSurfaceFrame, dark.trackSurfaceFrame)
-        let comparisonFrame = light.trackSurfaceFrame
-            .intersection(dark.trackSurfaceFrame)
-            .insetBy(dx: 1, dy: 1)
+        let comparisonFrame = MyTracksRenderedComparisonFrame.appOwnedIntersection(
+            light: light.trackSurfaceFrame,
+            dark: dark.trackSurfaceFrame
+        )
         guard let differenceCount = light.raster.differingPixelCount(
             comparedTo: dark.raster,
             in: comparisonFrame
@@ -3930,7 +3990,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Hidden — Undo"].waitForExistence(timeout: 5))
 
         XCTAssertTrue(waitForNonExistence(of: app.staticTexts["Hidden — Undo"], timeout: 7))
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
     }
 
@@ -3967,7 +4027,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["debug.hide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(true, in: app))
 
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         openSecondFixtureCard(in: map, app: app)
@@ -4044,7 +4104,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForButtonLabel("Show all", identifier: "explore.scope.categories.toggle-all", in: app))
         app.buttons["Close"].tap()
 
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
         tapSecondFixturePin(in: map)
         XCTAssertFalse(app.staticTexts["Art Deco Cinema"].waitForExistence(timeout: 2))
@@ -4069,7 +4129,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         app.buttons["debug.hide-fixture"].tap()
         XCTAssertTrue(waitForFixtureHidden(true, in: app))
-        tapFixturePin(in: map)
+        tapFixtureCoordinate(in: map)
         XCTAssertFalse(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 2))
 
         openScope(in: app)
@@ -6208,7 +6268,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             x: appFrame.minX,
             y: visitDateBack.frame.minY,
             width: appFrame.width,
-            height: appFrame.maxY - visitDateBack.frame.minY - 34
+            height: appFrame.maxY - visitDateBack.frame.minY
+                - MyTracksRenderedFrameGeometry.systemOwnedBottomInset
         )
 
         return MyTracksAppearanceCapture(
@@ -6704,7 +6765,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForNonExistence(of: sheet, timeout: 5))
     }
 
-    private func tapFixturePin(in map: XCUIElement) {
+    private func tapFixturePin(in map: XCUIElement, app: XCUIApplication) {
+        openFixtureCard(in: map, app: app)
+    }
+
+    private func tapFixtureCoordinate(in map: XCUIElement) {
         map.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
