@@ -45,6 +45,13 @@ janitor could therefore unlink a normally held old inode and let a second acquir
 gate duration provides no protection. Same-simulator serialization and the global cap are separate
 gates: acquiring one never substitutes for the other.
 
+Legacy `/private/tmp/making-tracks-*.lock` pathnames on this host are compatibility symlinks to those
+Application Support targets. Pre-cutover and current wrappers therefore flock the same inodes; never
+turn an alias back into a regular file. A lock-root transition on any replacement host requires a
+planner-announced fleet-quiet window, proof that every old inode is unheld, and post-cutover proof that
+each legacy pathname and target resolve to the same inode before wrapper operation resumes. Changing the
+code default without that one-namespace cutover creates two independent lock fleets and is prohibited.
+
 ### Fleet-exclusive maintenance
 
 `MT_GATE_MAX_CONCURRENT=1` takes an exclusive policy lock. It waits for every ordinary cap-2 gate to exit,

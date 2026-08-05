@@ -251,6 +251,26 @@ else
     "status=$default_lock_root_rc root=$DEFAULT_LOCK_ROOT"
 fi
 
+FRESH_STATUS_HOME="$SAFE_TEST_ROOT/fresh-status-home"
+set +e
+fresh_default_status_out="$(
+  HOME="$FRESH_STATUS_HOME" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_UDID="$FAKE_UDID" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    "$SIM_LOCK" --seat codex1 --status 2>&1
+)"
+fresh_default_status_rc=$?
+set -e
+if [ "$fresh_default_status_rc" -eq 0 ] &&
+   [ "$fresh_default_status_out" = "FREE" ] &&
+   [ -d "$FRESH_STATUS_HOME/Library/Application Support/making-tracks-gates/locks" ]; then
+  record_ok "creates a fresh default lock root before status diagnostics"
+else
+  record_fail "creates a fresh default lock root before status diagnostics" \
+    "status=$fresh_default_status_rc output='$fresh_default_status_out'"
+fi
+
 set +e
 legacy_destination_out="$(
   MT_SIM_LOCK_TEST_MODE=1 \
@@ -726,6 +746,7 @@ fi
 
 for janitor_derived_data in \
   /var/tmp/mt-612-direct-var-tmp \
+  /VAR/TMP/mt-612-direct-case-alias \
   "$TMP/mt-612-direct-user-temp"; do
   rm -f "$CLI_XCODEBUILD_LOG"
   set +e
@@ -2012,6 +2033,55 @@ else
     "holder did not use the expected per-simulator lock path"
   touch "$INODE_HOLDER_A.release"
   wait "$inode_a_pid" 2>/dev/null
+fi
+
+CUTOVER_UDID="TEST-CUTOVER-SIM"
+CUTOVER_TARGET_ROOT="$TMP/cutover-target-locks"
+CUTOVER_LEGACY_ROOT="$TMP/cutover-legacy-locks"
+CUTOVER_TARGET="$CUTOVER_TARGET_ROOT/making-tracks-sim-$CUTOVER_UDID.lock"
+CUTOVER_LEGACY="$CUTOVER_LEGACY_ROOT/making-tracks-sim-$CUTOVER_UDID.lock"
+CUTOVER_HOLDER="$TMP/cutover-holder"
+CUTOVER_ACQUIRED="$TMP/cutover-acquired"
+mkdir -p "$CUTOVER_TARGET_ROOT" "$CUTOVER_LEGACY_ROOT"
+touch "$CUTOVER_TARGET"
+ln -s "$CUTOVER_TARGET" "$CUTOVER_LEGACY"
+register_release "$CUTOVER_HOLDER"
+# Model an old wrapper flocking the legacy pathname after the planned cutover.
+# shellcheck disable=SC2016 # Expanded by the holder shell.
+(
+  exec 6>>"$CUTOVER_LEGACY"
+  "$FLOCK_BIN" -x 6
+  touch "$CUTOVER_HOLDER.started"
+  while [ ! -e "$CUTOVER_HOLDER.release" ]; do sleep 0.02; done
+) &
+cutover_holder_pid=$!
+if wait_for_path "$CUTOVER_HOLDER.started"; then
+  MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$CUTOVER_TARGET_ROOT" \
+    MT_SIM_LOCK_TEST_UDID="$CUTOVER_UDID" \
+    MT_SIM_LOCK_TEST_LEDGER="$TEST_LEDGER" \
+    MT_SIM_LOCK_WAIT=5 \
+    "$SIM_LOCK" --seat codex1 touch "$CUTOVER_ACQUIRED" >"$TMP/cutover-new.log" 2>&1 &
+  cutover_new_pid=$!
+  cutover_waiting=0
+  wait_for_pattern "$TMP/cutover-new.log" "waiting for" || cutover_waiting=1
+  cutover_queued=0
+  [ ! -e "$CUTOVER_ACQUIRED" ] || cutover_queued=1
+  touch "$CUTOVER_HOLDER.release"
+  wait "$cutover_holder_pid" 2>/dev/null
+  wait "$cutover_new_pid" 2>/dev/null
+  if [ "$cutover_waiting" -eq 0 ] &&
+     [ "$cutover_queued" -eq 0 ] &&
+     [ -e "$CUTOVER_ACQUIRED" ] &&
+     [ "$(stat -Lf %i "$CUTOVER_LEGACY")" = "$(stat -f %i "$CUTOVER_TARGET")" ]; then
+    record_ok "serializes old and new wrappers through the cutover symlink inode"
+  else
+    record_fail "serializes old and new wrappers through the cutover symlink inode" \
+      "waiting=$cutover_waiting queued=$cutover_queued acquired=$(test -e "$CUTOVER_ACQUIRED" && echo yes || echo no)"
+  fi
+else
+  record_fail "serializes old and new wrappers through the cutover symlink inode" \
+    "legacy holder did not start"
 fi
 
 echo

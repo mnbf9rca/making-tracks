@@ -33,7 +33,7 @@ prevent the failure because the cleaner evaluates files individually.
    `/private/tmp`, `/var/tmp`, or macOS's per-user `/private/var/folders/*/T/`
    temporary tree.
 4. `release-gate.sh` independently canonicalizes and rejects its selected
-   DerivedData path below either temporary root before pruning, creating, or
+   DerivedData path below any system-managed temporary root before pruning, creating, or
    invoking Xcode.
 5. Every refusal fails closed, occurs before Xcode runs, and cites #612.
 6. Result bundles may remain under `/private/tmp`. Stable coordination files
