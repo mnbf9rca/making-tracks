@@ -228,6 +228,26 @@ else
     "status=$legacy_destination_rc output='$(echo "$legacy_destination_out" | head -1)'"
 fi
 
+LIVE_LEDGER_HOME="$(realpath "$TMP")/live-ledger-home"
+mkdir -p "$LIVE_LEDGER_HOME"
+set +e
+# shellcheck disable=SC2016 # Expanded by the wrapped child shell.
+live_ledger_out="$(
+  HOME="$LIVE_LEDGER_HOME" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK_TEST_ROOT="$LOCK_ROOT" \
+    "$SIM_LOCK" --seat codex1 sh -c 'printf "%s|%s\\n" "$MT_SIM_LOCK_SEAT" "$MT_RELEASE_GATE_DERIVED_DATA"' 2>&1
+)"
+live_ledger_rc=$?
+set -e
+if [ "$live_ledger_rc" -eq 0 ] &&
+   [ "$live_ledger_out" = "codex1|$LIVE_LEDGER_HOME/Library/Caches/making-tracks-gates/codex1" ]; then
+  record_ok "uses the checked-in Host Gate Seats table for the selected seat"
+else
+  record_fail "uses the checked-in Host Gate Seats table for the selected seat" \
+    "status=$live_ledger_rc output='$live_ledger_out'"
+fi
+
 echo
 echo "live simulator consumer contract:"
 
