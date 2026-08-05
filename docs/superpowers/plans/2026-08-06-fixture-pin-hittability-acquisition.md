@@ -138,11 +138,11 @@ Run `git diff --check`, the agent-law lint, and `swift test --package-path ios`.
 
 Stage only the plan, UI-test source, and #617 ledger lines. Review the staged diff, sign the commit, verify the signature, push the branch, then verify the remote head.
 
-- [ ] **Step 3: Obtain scoped independent review**
+- [x] **Step 3: Obtain scoped independent review**
 
 Review the exact commit against #617 and the planner ruling. The clearance must name its scope, exact head, and Critical/Important/Minor counts. Resolve surviving findings before the full gate.
 
-- [ ] **Step 4: Run one fresh full combined gate**
+- [x] **Step 4: Run one fresh full combined gate**
 
 Notify planner immediately before starting. Use a unique run directory, the production default concurrency cap, and:
 
@@ -153,6 +153,6 @@ MT_RELEASE_GATE_RUN_DIR=/private/tmp/release-gate-617-full \
 
 Expected: Release and Debug build-for-testing pass; 372/372 tests pass with 0 failed/skipped (251 app + 121 UI, including the new pure regression). Extract counts before deleting only the task-created successful result bundle. Recheck `--status` reports `FREE`.
 
-- [ ] **Step 5: Open and hand off the separate draft PR**
+- [x] **Step 5: Open and hand off the separate draft PR**
 
 Open a draft PR from `fix-617-fixture-pin-hittability` to `ios`, label it `sourcery-review`, `track-b-ios`, and `wp`, and state that it is stacked on #616 until planner merges #616 first. Update issue bodies with final evidence, append ledger transitions, verify live checks and exact heads, and hand both #616 and #617 heads to planner. Do not merge.
