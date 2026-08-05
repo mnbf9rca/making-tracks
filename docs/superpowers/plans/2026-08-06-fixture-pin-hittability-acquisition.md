@@ -134,7 +134,7 @@ Temporarily classify `exists && !frameContainsMapCenter` as `.hittable`, ignorin
 
 Run `git diff --check`, the agent-law lint, and `swift test --package-path ios`. Record exact counts.
 
-- [ ] **Step 2: Commit and push one signed seam repair commit**
+- [x] **Step 2: Commit and push one signed seam repair commit**
 
 Stage only the plan, UI-test source, and #617 ledger lines. Review the staged diff, sign the commit, verify the signature, push the branch, then verify the remote head.
 
