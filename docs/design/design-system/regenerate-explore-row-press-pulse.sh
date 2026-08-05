@@ -4,9 +4,10 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 destination="${MT_SIM_LOCK_DESTINATION:-}"
 simulator_udid="${MT_SIM_LOCK_UDID:-}"
+seat="${MT_SIM_LOCK_SEAT:-}"
 expected_run_dir="/private/tmp/release-gate-$simulator_udid"
 run_dir="${MT_RELEASE_GATE_RUN_DIR:-$expected_run_dir}"
-derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-$run_dir/DerivedData}"
+derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-}"
 artifact_root="/private/tmp/making-tracks-artifacts.$simulator_udid"
 output_dir="$repo_root/docs/design/design-system"
 expected_xcode_version=$'Xcode 26.6\nBuild version 17F113'
@@ -15,8 +16,8 @@ expected_xcode_version=$'Xcode 26.6\nBuild version 17F113'
   echo "regenerate-explore-row-press-pulse: invoke through scripts/sim-lock.sh --seat <seat>" >&2
   exit 1
 }
-[ -n "$destination" ] && [ -n "$derived_data" ] && [ -n "$simulator_udid" ] || {
-  echo "regenerate-explore-row-press-pulse: lock destination, derived data, and UUID are required" >&2
+[ -n "$destination" ] && [ -n "$derived_data" ] && [ -n "$simulator_udid" ] && [ -n "$seat" ] || {
+  echo "regenerate-explore-row-press-pulse: lock destination, seat, derived data, and UUID are required" >&2
   exit 1
 }
 case ",$destination," in
@@ -30,8 +31,9 @@ esac
   echo "regenerate-explore-row-press-pulse: run directory must be the locked seat's exact default" >&2
   exit 1
 }
-[ "$derived_data" = "$run_dir/DerivedData" ] || {
-  echo "regenerate-explore-row-press-pulse: derived data must belong to the release-gate run directory" >&2
+expected_derived_data="$HOME/Library/Caches/making-tracks-gates/$seat"
+[ "$derived_data" = "$expected_derived_data" ] || {
+  echo "regenerate-explore-row-press-pulse: derived data must be the locked seat cache path: $expected_derived_data" >&2
   exit 1
 }
 result_bundle="$run_dir/MakingTracksTests.xcresult"

@@ -5,7 +5,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 destination="${MT_SIM_LOCK_DESTINATION:-}"
 expected_xcode_version=$'Xcode 26.6\nBuild version 17F113'
 output_dir="$repo_root/docs/design/design-system"
-derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-/private/tmp/dd-codex2}"
+derived_data="${MT_RELEASE_GATE_DERIVED_DATA:-$HOME/Library/Caches/making-tracks-gates/codex2}"
 
 [ -n "$destination" ] || {
   echo "regenerate-snow-theme-lock: MT_SIM_LOCK_DESTINATION is required" >&2
