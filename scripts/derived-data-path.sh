@@ -15,7 +15,7 @@ mt_canonical_derived_data_path() {
       ;;
   esac
 
-  if [ -e "$path" ]; then
+  if [ -e "$path" ] || [ -L "$path" ]; then
     canonical="$(realpath "$path")" || {
       echo "cannot resolve DerivedData path: $path" >&2
       return 1
