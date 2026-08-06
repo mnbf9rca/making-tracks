@@ -8,6 +8,28 @@ enum PlaceCardCopyIDConfirmationState: Equatable {
 }
 
 @MainActor
+struct PlaceCardCopyIDEffects {
+    let copy: (String) -> Void
+    let announce: (String) -> Void
+    let sleep: (Duration) async -> Void
+
+    static let live = PlaceCardCopyIDEffects(
+        copy: { placeID in
+            UIPasteboard.general.string = placeID
+        },
+        announce: { message in
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: message
+            )
+        },
+        sleep: { duration in
+            try? await Task.sleep(for: duration)
+        }
+    )
+}
+
+@MainActor
 final class PlaceCardCopyIDConfirmationController {
     private let copy: (String) -> Void
     private let announce: (String) -> Void
@@ -118,11 +140,15 @@ struct PlaceCardMoreMenuButton: View {
                 placeID: placeID,
                 onAddToList: onAddToList
             )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             PlaceCardMoreIconGlyph()
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
-        .frame(width: 44, height: 44)
+        // The native sheet presents its content slightly inset and scaled.
+        // Keep the transparent interaction surface large enough to expose a
+        // true 44-point target after that presentation transform.
+        .frame(width: 46, height: 46)
         .contentShape(Rectangle())
     }
 }
@@ -131,8 +157,11 @@ private struct PlaceCardMoreMenuInteractionView: UIViewRepresentable {
     let placeID: String
     let onAddToList: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(placeID: placeID, onAddToList: onAddToList)
+    func makeCoordinator() -> PlaceCardMoreMenuCoordinator {
+        PlaceCardMoreMenuCoordinator(
+            placeID: placeID,
+            onAddToList: onAddToList
+        )
     }
 
     func makeUIView(context: Context) -> PlaceCardMenuUIButton {
@@ -158,93 +187,98 @@ private struct PlaceCardMoreMenuInteractionView: UIViewRepresentable {
 
     static func dismantleUIView(
         _ button: PlaceCardMenuUIButton,
-        coordinator: Coordinator
+        coordinator: PlaceCardMoreMenuCoordinator
     ) {
         coordinator.cancel()
         button.onMenuWillEnd = nil
     }
+}
 
-    @MainActor
-    final class Coordinator: NSObject {
-        private var placeID: String
-        private var onAddToList: () -> Void
-        private var state: PlaceCardCopyIDConfirmationState = .idle
-        private weak var button: PlaceCardMenuUIButton?
-        private var confirmationController: PlaceCardCopyIDConfirmationController?
+@MainActor
+final class PlaceCardMoreMenuCoordinator: NSObject {
+    private var placeID: String
+    private var onAddToList: () -> Void
+    private let effects: PlaceCardCopyIDEffects
+    private(set) var state: PlaceCardCopyIDConfirmationState = .idle
+    private weak var button: PlaceCardMenuUIButton?
+    private var confirmationController: PlaceCardCopyIDConfirmationController?
 
-        init(placeID: String, onAddToList: @escaping () -> Void) {
-            self.placeID = placeID
-            self.onAddToList = onAddToList
+    init(
+        placeID: String,
+        onAddToList: @escaping () -> Void,
+        effects: PlaceCardCopyIDEffects = .live
+    ) {
+        self.placeID = placeID
+        self.onAddToList = onAddToList
+        self.effects = effects
+    }
+
+    func attach(to button: PlaceCardMenuUIButton) {
+        self.button = button
+        button.onMenuWillEnd = { [weak self] in
+            self?.confirmationController?.cancel()
         }
+        if confirmationController == nil {
+            confirmationController = makeConfirmationController()
+        }
+        refreshMenu()
+    }
 
-        func attach(to button: PlaceCardMenuUIButton) {
-            self.button = button
-            button.onMenuWillEnd = { [weak self] in
+    func update(placeID: String, onAddToList: @escaping () -> Void) {
+        self.placeID = placeID
+        self.onAddToList = onAddToList
+    }
+
+    func activateCopyID() {
+        if confirmationController == nil {
+            confirmationController = makeConfirmationController()
+        }
+        confirmationController?.activate(placeID: placeID)
+    }
+
+    func cancel() {
+        confirmationController?.cancel()
+    }
+
+    private func makeConfirmationController() -> PlaceCardCopyIDConfirmationController {
+        PlaceCardCopyIDConfirmationController(
+            copy: effects.copy,
+            announce: effects.announce,
+            setState: { [weak self] state in
+                self?.state = state
+                self?.refreshMenu()
+            },
+            delay: { [effects] in
+                await effects.sleep(.seconds(1))
+            },
+            dismiss: { [weak self] in
+                self?.button?.contextMenuInteraction?.dismissMenu()
+            }
+        )
+    }
+
+    private func refreshMenu() {
+        let menu = makeMenu()
+        button?.menu = menu
+        button?.contextMenuInteraction?.updateVisibleMenu { _ in menu }
+    }
+
+    private func makeMenu() -> UIMenu {
+        PlaceCardMoreMenuContent.menu(
+            state: state,
+            onAddToList: { [weak self] in
                 self?.confirmationController?.cancel()
+                self?.onAddToList()
+            },
+            onCopyID: { [weak self] in
+                self?.activateCopyID()
             }
-            if confirmationController == nil {
-                confirmationController = makeConfirmationController()
-            }
-            refreshMenu()
-        }
-
-        func update(placeID: String, onAddToList: @escaping () -> Void) {
-            self.placeID = placeID
-            self.onAddToList = onAddToList
-        }
-
-        func cancel() {
-            confirmationController?.cancel()
-        }
-
-        private func makeConfirmationController() -> PlaceCardCopyIDConfirmationController {
-            PlaceCardCopyIDConfirmationController(
-                copy: { placeID in
-                    UIPasteboard.general.string = placeID
-                },
-                announce: { message in
-                    UIAccessibility.post(
-                        notification: .announcement,
-                        argument: message
-                    )
-                },
-                setState: { [weak self] state in
-                    self?.state = state
-                    self?.refreshMenu()
-                },
-                delay: {
-                    try? await Task.sleep(for: .seconds(1))
-                },
-                dismiss: { [weak self] in
-                    self?.button?.contextMenuInteraction?.dismissMenu()
-                }
-            )
-        }
-
-        private func refreshMenu() {
-            let menu = makeMenu()
-            button?.menu = menu
-            button?.contextMenuInteraction?.updateVisibleMenu { _ in menu }
-        }
-
-        private func makeMenu() -> UIMenu {
-            PlaceCardMoreMenuContent.menu(
-                state: state,
-                onAddToList: { [weak self] in
-                    self?.confirmationController?.cancel()
-                    self?.onAddToList()
-                },
-                onCopyID: { [weak self] in
-                    guard let self else { return }
-                    self.confirmationController?.activate(placeID: self.placeID)
-                }
-            )
-        }
+        )
     }
 }
 
 @MainActor
-private final class PlaceCardMenuUIButton: UIButton {
+final class PlaceCardMenuUIButton: UIButton {
     var onMenuWillEnd: (() -> Void)?
 
     override func contextMenuInteraction(

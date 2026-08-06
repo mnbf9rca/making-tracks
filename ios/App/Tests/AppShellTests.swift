@@ -5409,6 +5409,43 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testPlaceCardMoreMenuCoordinatorWiresExactProductionEffectsAndDuration() async {
+        let delayStarted = expectation(description: "coordinator delay started")
+        let delay = ManualConfirmationDelay()
+        var events: [String] = []
+        var requestedDurations: [Duration] = []
+        let coordinator = PlaceCardMoreMenuCoordinator(
+            placeID: "mt1_raw-coordinator-payload",
+            onAddToList: {},
+            effects: PlaceCardCopyIDEffects(
+                copy: { events.append("copy:\($0)") },
+                announce: { events.append("announce:\($0)") },
+                sleep: { duration in
+                    requestedDurations.append(duration)
+                    delayStarted.fulfill()
+                    await delay.wait()
+                }
+            )
+        )
+
+        coordinator.activateCopyID()
+        await fulfillment(of: [delayStarted])
+
+        XCTAssertEqual(
+            events,
+            [
+                "copy:mt1_raw-coordinator-payload",
+                "announce:Place ID copied.",
+            ]
+        )
+        XCTAssertEqual(requestedDurations, [.seconds(1)])
+        XCTAssertEqual(coordinator.state, .copied)
+
+        coordinator.cancel()
+        delay.resumeAll()
+    }
+
+    @MainActor
     func testCopyIDConfirmationCopiesRawPayloadAndAnnouncesBeforeCopiedState() {
         let delay = ManualConfirmationDelay()
         var events: [String] = []
