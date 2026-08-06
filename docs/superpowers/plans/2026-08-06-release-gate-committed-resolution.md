@@ -321,21 +321,21 @@ of selecting a fake outcome.
 - Consumes: Task 2's exact signed code head and project review/gate protocols.
 - Produces: exact-head review evidence, one ceiling-3 host gate, a draft PR to `ios`, and planner handoff.
 
-- [ ] **Step 1: Re-ground**
+- [x] **Step 1: Re-ground**
 
 Run `git fetch origin ios`, `git merge-base --is-ancestor origin/ios HEAD`,
 `git diff --stat origin/ios..HEAD`, and `git diff --check` as separate calls.
 If `ios` advanced, merge it non-interactively and rerun the controller harness
 plus both mutation proofs.
 
-- [ ] **Step 2: Run adversarial review**
+- [x] **Step 2: Run adversarial review**
 
 Obtain independent critics for spec fidelity, Bash 3.2/status correctness, test
 quality/teeth, #614 scope separation, and security/untrusted-input posture.
 Cross-examine findings, fix survivors test-first, and receive final
 Critical/Important/Minor counts for the exact signed head.
 
-- [ ] **Step 3: Run exactly one fresh ceiling-3 host gate**
+- [x] **Step 3: Run exactly one fresh ceiling-3 host gate**
 
 Require `./scripts/sim-lock.sh --seat codex1 --status` to report `FREE`, then
 run exactly once:
@@ -349,7 +349,7 @@ Release/build-for-testing outcomes, exact app/unit and UI counts, timings,
 owned result path and markers, clean Git status, and final authoritative
 `codex1` status.
 
-- [ ] **Step 4: Record and commit evidence**
+- [x] **Step 4: Record and commit evidence**
 
 Append one chronological ledger line with the exact head, controller count,
 both mutation results, review counts, one host-gate result, lockfile digest and
