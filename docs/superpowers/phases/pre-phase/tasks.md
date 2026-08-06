@@ -50,6 +50,8 @@ Format: one line per transition, newest last:
 - 2026-08-01T10:00Z codex2 #591 ready-to-merge — PR #601 code/review head `701091c` passed Attribution, ShellCheck, agent-law lint, CI Release/build-for-testing, unit tests, and the `ios-release-gate` aggregator; PR-trigger UI shards were correctly skipped, while the host gate covers 97/97 UI tests; all review feedback is dispositioned, required labels remain present, and the final ledger-only head is pending planner handoff
 - 2026-08-01T17:16Z codex4 #575 evidence captured — four 1206×2622 device-real rest/pressed PNGs recorded at exact source `11e28f83842b9a3ad2733ca473abb61a7c0fc0e6`; default top displacement is 4 pixels and AX is 10; unchanged clean regeneration reproduced all four SHA-256 values byte-for-byte
 - 2026-08-01T17:16Z codex4 #575 tests green — default and AX focused UI tests each passed 1/1; scaled-inset mutation failed because AX no longer exceeded default, forced-rest live-marker mutation failed with no exact pressed candidate, both production sources were restored exactly, and normal regeneration passed after each restoration
+- 2026-08-06T16:18Z codex3 #375 claimed — planner-assigned Copy ID action; issue classified `enhancement` + `requires-mockups`; #454's exception is system-controlled availability only, so implementation waits for the standard mockup validation and Rob ruling
+- 2026-08-06T16:18Z codex3 #375 branch — `fix-375-copy-id-action` from fresh `origin/ios` `7a3fa31`; isolated worktree `.worktrees/fix-375-copy-id-action`; seat `codex3`
 
 ## Done (pre-phase)
 

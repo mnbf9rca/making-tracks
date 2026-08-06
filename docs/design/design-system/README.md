@@ -56,6 +56,14 @@ implementation evidence.
 |---|---|
 | `a8-saved-on-candidate-v2.html` + `a8-saved-on-candidate-v2-{default,ax}.png` | Saved ON candidate decision evidence at exact `1540×980` DSF1 captures. Each candidate shows Saved OFF/ON, simultaneous Saved/Seen/Loved ON, and all seven ruled checks at frozen A8 default or AX geometry. On 2026-07-31 Rob ratified Deep Companion `#08483E` as the accent-family dark Saved ON fill carrying `accentContrast` ink with the explicit pick “Deep is fine”; panel SHA `4421612` is the decision provenance. Accent reuse `#0A6B5C` is the rejected alternative. This evidence does not claim the ratified fill is wired into production code. Captured with Playwright-bundled Chromium/headless shell `151.0.7922.34`; byte-identical repeat SHA-256 values are `d7070aa1d97f769c57e6ad603d280d39b6a6c2a8947f787f7985f1bb48b67402` (default) and `0859dfd2532f3dca4d0182368e2df53b1393d1afb55f039b6c3d8fbba40c4eff` (AX). Frozen `a8-r15-place-card.png` remains unchanged at `7704a185ebb872ed61017db757a24c20be0a5c2870bde8b575007398972c733b`. |
 
+## Pre-phase wireframe proposals — awaiting ruling
+
+These issue-routed packets are proposals until reviewer validation and Rob's explicit ruling.
+
+| Asset | What it shows |
+|---|---|
+| [`375-copy-id-menu.html`](375-copy-id-menu.html) + `375-copy-id-menu{,-ax}.png` | #375's exact 390×844 default and AX proposal: append `Copy ID` after the existing `Add to list` row in the native place-card More menu, copy only the raw `mt1_…` value, use native menu dismissal as sighted feedback, and announce success to VoiceOver without exposing the identifier in the card hierarchy. The menu geometry is illustrative and system-owned; row order, payload, and feedback are the decision. [`375-copy-id-menu-ruling.md`](375-copy-id-menu-ruling.md) records alternatives, constraints, accessibility, reproduction, and SHA-256 values. Regenerate with `./scripts/render-375-copy-id.sh`. |
+
 ## Phase 2 wireframes awaiting ruling
 
 These are authored mockup-gate records. They become frozen design evidence only after reviewer

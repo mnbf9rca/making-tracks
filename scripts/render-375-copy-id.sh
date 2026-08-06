@@ -1,0 +1,58 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+source_path="$repo_root/docs/design/design-system/375-copy-id-menu.html"
+output_dir="$repo_root/docs/design/design-system"
+browser_path=${MT_CHROMIUM_BIN:-}
+expected_browser_version=151.0.7922.34
+
+if [ -z "$browser_path" ]; then
+    if [ -n "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then
+        playwright_cache=$PLAYWRIGHT_BROWSERS_PATH
+    elif [ "$(uname -s)" = Darwin ]; then
+        playwright_cache="$HOME/Library/Caches/ms-playwright"
+    else
+        playwright_cache="$HOME/.cache/ms-playwright"
+    fi
+
+    for candidate in "$playwright_cache"/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell; do
+        if [ -x "$candidate" ] &&
+            candidate_version=$("$candidate" --version 2>/dev/null) &&
+            case "$candidate_version" in *"$expected_browser_version") true ;; *) false ;; esac
+        then
+            browser_path=$candidate
+            break
+        fi
+    done
+fi
+
+if [ -z "$browser_path" ]; then
+    echo "Set MT_CHROMIUM_BIN to Chromium $expected_browser_version or its Playwright headless shell." >&2
+    exit 1
+fi
+
+actual_browser_version=$("$browser_path" --version)
+case "$actual_browser_version" in
+    *"$expected_browser_version") ;;
+    *)
+        echo "#375 renders require Chromium $expected_browser_version; found $actual_browser_version." >&2
+        exit 1
+        ;;
+esac
+
+render() {
+    variant=$1
+    output=$2
+    "$browser_path" \
+        --headless \
+        --disable-gpu \
+        --hide-scrollbars \
+        --force-device-scale-factor=1 \
+        --window-size=390,844 \
+        --screenshot="$output_dir/$output" \
+        "file://$source_path?variant=$variant"
+}
+
+render default 375-copy-id-menu.png
+render ax 375-copy-id-menu-ax.png
