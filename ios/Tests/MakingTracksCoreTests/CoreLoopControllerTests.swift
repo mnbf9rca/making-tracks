@@ -244,10 +244,10 @@ final class CoreLoopControllerTests: XCTestCase {
     }
 
     func testVisitEditingOperationsEmitChangedPlaceIDsByVisitIdentity() async throws {
-        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let db = try AppDatabase.inMemory(now: { day.addingTimeInterval(60 * 60 * 24 * 2) })
         let controller = CoreLoopController(database: db)
         var changes = controller.changes.makeAsyncIterator()
-        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
         let firstPlace = try makePlace("p_edit_first")
         let secondPlace = try makePlace("p_edit_second")
         let first = try db.recordVisit(firstPlace, at: day.addingTimeInterval(60))

@@ -232,6 +232,10 @@ extension AppDatabase {
         toDayContaining targetDay: Date,
         calendar: Calendar = Calendar(identifier: .gregorian)
     ) throws {
+        let policy = VisitDateEditPolicy(now: now(), calendar: calendar)
+        guard policy.contains(targetDay) else {
+            throw AppDatabaseError.futureVisitDate
+        }
         try dbQueue.write { db in
             guard let existing = try Visit.fetchOne(db, key: id),
                   let movedAt = Self.replacingDay(of: existing.visitedAt, withDayContaining: targetDay, calendar: calendar)
