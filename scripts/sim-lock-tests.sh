@@ -2144,6 +2144,24 @@ run_artifact_gate() {
     "$RELEASE_GATE"
 }
 
+run_artifact_gate_with_system_bash() {
+  local mode="$1"
+  shift
+
+  env "$@" \
+    PATH="$FAKE_BIN:/bin:/usr/bin:/usr/sbin:/sbin" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_SIM_LOCK_SEAT=codex1 \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_DERIVED_DATA="$SAFE_TEST_ROOT/artifact-derived-data" \
+    MT_RELEASE_GATE_MODE="$mode" \
+    /bin/bash "$RELEASE_GATE"
+}
+
 rm -f "$XCODEBUILD_LOG"
 set +e
 mismatched_gate_out="$(
@@ -2526,6 +2544,20 @@ else
 fi
 
 rm -rf "$RELEASE_RUN_DIR_A"
+: >"$XCODEBUILD_LOG"
+set +e
+system_bash_artifact_out="$(run_artifact_gate_with_system_bash test 2>&1)"
+system_bash_artifact_rc=$?
+set -e
+if [ "$system_bash_artifact_rc" -eq 0 ] &&
+   echo "$system_bash_artifact_out" | grep -q 'phase end: tests without building status=0'; then
+  record_ok "runs an unfiltered owned test gate with macOS system Bash 3.2"
+else
+  record_fail "runs an unfiltered owned test gate with macOS system Bash 3.2" \
+    "status=$system_bash_artifact_rc output='$(echo "$system_bash_artifact_out" | tail -1)'"
+fi
+
+rm -rf "$RELEASE_RUN_DIR_A"
 mkdir -p "$ARTIFACT_RUNS_A/run-20260801T000000Z-9001"
 printf 'release-gate-artifact-v1\nudid=%s\n' "$RELEASE_UDID_A" \
   >"$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/.release-gate-owned"
@@ -2724,6 +2756,78 @@ if [ "$caller_enumeration_rc" -eq 0 ] &&
 else
   record_fail "preserves an explicit enumeration artifact outside the cleanup root" \
     "status=$caller_enumeration_rc output='$(echo "$caller_enumeration_out" | tail -1)'"
+fi
+
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A"
+nested_caller_run="$ARTIFACT_RUNS_A/run-20260801T000000Z-9201"
+nested_caller_result="$nested_caller_run/caller-owned.xcresult"
+seed_successful_artifact "$nested_caller_run" "$RELEASE_UDID_A"
+: >"$XCODEBUILD_LOG"
+set +e
+nested_caller_out="$(run_artifact_gate test MT_RELEASE_GATE_RESULT_BUNDLE="$nested_caller_result" 2>&1)"
+nested_caller_rc=$?
+set -e
+TZ=UTC touch -t 197001020733.19 "$nested_caller_run/.release-gate-success"
+set +e
+nested_prune_out="$(run_artifact_gate full MT_RELEASE_GATE_TEST_NOW=200000 2>&1)"
+nested_prune_rc=$?
+set -e
+if [ "$nested_caller_rc" -eq 0 ] &&
+   [ "$nested_prune_rc" -eq 0 ] &&
+   [ -f "$nested_caller_result/Info.plist" ] &&
+   [ -f "$nested_caller_run/.release-gate-preserve" ]; then
+  record_ok "caller override inside an owned sibling permanently disqualifies that sibling"
+else
+  record_fail "caller override inside an owned sibling permanently disqualifies that sibling" \
+    "caller_status=$nested_caller_rc prune_status=$nested_prune_rc result=$(test -f "$nested_caller_result/Info.plist" && echo present || echo missing) caller_output='$(echo "$nested_caller_out" | tail -1)' prune_output='$(echo "$nested_prune_out" | tail -1)'"
+fi
+
+# shellcheck disable=SC2016 # Expanded when the fake cleanup commands run.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'last=""' \
+  'for argument in "$@"; do last="$argument"; done' \
+  'if [ -n "${MT_TEST_SWAP_CANDIDATE:-}" ] && [ "$last" = "$MT_TEST_SWAP_CANDIDATE" ] && [ -d "$MT_TEST_SWAP_REPLACEMENT" ]; then' \
+  '  /bin/mv "$MT_TEST_SWAP_CANDIDATE" "$MT_TEST_SWAP_AWAY"' \
+  '  /bin/mv "$MT_TEST_SWAP_REPLACEMENT" "$MT_TEST_SWAP_CANDIDATE"' \
+  'fi' \
+  'exec /bin/rm "$@"' >"$FAKE_BIN/rm"
+# shellcheck disable=SC2016 # Expanded when the fake cleanup commands run.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [ -n "${MT_TEST_SWAP_CANDIDATE:-}" ] && [ "${1:-}" = "$MT_TEST_SWAP_CANDIDATE" ] && [ -d "$MT_TEST_SWAP_REPLACEMENT" ]; then' \
+  '  /bin/mv "$MT_TEST_SWAP_CANDIDATE" "$MT_TEST_SWAP_AWAY"' \
+  '  /bin/mv "$MT_TEST_SWAP_REPLACEMENT" "$MT_TEST_SWAP_CANDIDATE"' \
+  'fi' \
+  'exec /bin/mv "$@"' >"$FAKE_BIN/mv"
+chmod +x "$FAKE_BIN/rm" "$FAKE_BIN/mv"
+
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A"
+swap_candidate="$ARTIFACT_RUNS_A/run-20260801T000000Z-9301"
+swap_replacement="$ARTIFACT_RUNS_A/run-20260801T000000Z-9302"
+swap_away="$TMP/swap-validated-success"
+seed_successful_artifact "$swap_candidate" "$RELEASE_UDID_A"
+mkdir -p "$swap_replacement"
+write_artifact_identity "$swap_replacement/.release-gate-owned" "$RELEASE_UDID_A"
+printf '%s\n' failure-evidence >"$swap_replacement/failure-sentinel"
+TZ=UTC touch -t 197001020733.19 "$swap_candidate/.release-gate-success"
+set +e
+swap_prune_out="$(run_artifact_gate full \
+  MT_RELEASE_GATE_TEST_NOW=200000 \
+  MT_TEST_SWAP_CANDIDATE="$swap_candidate" \
+  MT_TEST_SWAP_REPLACEMENT="$swap_replacement" \
+  MT_TEST_SWAP_AWAY="$swap_away" 2>&1)"
+swap_prune_rc=$?
+set -e
+if [ "$swap_prune_rc" -eq 0 ] &&
+   [ -f "$swap_candidate/failure-sentinel" ] &&
+   [ -d "$swap_away" ]; then
+  record_ok "detects a candidate pathname replacement before deletion and restores failure evidence"
+else
+  record_fail "detects a candidate pathname replacement before deletion and restores failure evidence" \
+    "status=$swap_prune_rc failure=$(test -f "$swap_candidate/failure-sentinel" && echo preserved || echo missing) validated=$(test -d "$swap_away" && echo moved || echo missing) output='$(echo "$swap_prune_out" | tail -1)'"
 fi
 
 printf '%s\n' '#!/usr/bin/env bash' 'cat' >"$FAKE_BIN/xcbeautify"

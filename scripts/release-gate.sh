@@ -105,26 +105,36 @@ canonical_directory() {
 }
 
 marker_matches_identity() {
+  marker_matches_identity_for_udid "$1" "$GATE_UDID"
+}
+
+marker_matches_identity_for_udid() {
   local byte_count
   local expected_byte_count
   local line_count
   local marker="$1"
+  local expected_udid="$2"
 
   [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
   line_count="$(wc -l <"$marker" | tr -d '[:space:]')"
   byte_count="$(wc -c <"$marker" | tr -d '[:space:]')"
-  expected_byte_count="$(printf '%s\nudid=%s\n' "$ARTIFACT_MARKER_SCHEMA" "$GATE_UDID" | wc -c | tr -d '[:space:]')"
+  expected_byte_count="$(printf '%s\nudid=%s\n' "$ARTIFACT_MARKER_SCHEMA" "$expected_udid" | wc -c | tr -d '[:space:]')"
   [ "$line_count" = "2" ] &&
     [ "$byte_count" = "$expected_byte_count" ] &&
     [ "$(sed -n '1p' "$marker")" = "$ARTIFACT_MARKER_SCHEMA" ] &&
-    [ "$(sed -n '2p' "$marker")" = "udid=$GATE_UDID" ]
+    [ "$(sed -n '2p' "$marker")" = "udid=$expected_udid" ]
 }
 
 write_identity_marker() {
-  local marker="$1"
+  write_identity_marker_for_udid "$1" "$GATE_UDID"
+}
 
-  printf '%s\nudid=%s\n' "$ARTIFACT_MARKER_SCHEMA" "$GATE_UDID" >"$marker"
-  marker_matches_identity "$marker" ||
+write_identity_marker_for_udid() {
+  local marker="$1"
+  local marker_udid="$2"
+
+  printf '%s\nudid=%s\n' "$ARTIFACT_MARKER_SCHEMA" "$marker_udid" >"$marker"
+  marker_matches_identity_for_udid "$marker" "$marker_udid" ||
     refuse "could not create an exact release-gate identity marker: $marker"
 }
 
@@ -136,6 +146,43 @@ require_real_directory() {
   if [ -e "$path" ] && [ ! -d "$path" ]; then
     refuse "$label must be a directory: $path"
   fi
+}
+
+mark_containing_owned_run_preserved() {
+  local artifact_path="$1"
+  local containing_run
+  local containing_udid
+  local existing_ancestor
+  local existing_ancestor_canonical
+  local owned_run_pattern
+  local preserve_marker
+
+  if [ -d "$artifact_path" ]; then
+    existing_ancestor="$artifact_path"
+  else
+    existing_ancestor="$(dirname "$artifact_path")"
+  fi
+  while [ ! -d "$existing_ancestor" ]; do
+    [ "$existing_ancestor" != "/" ] || return 0
+    existing_ancestor="$(dirname "$existing_ancestor")"
+  done
+  existing_ancestor_canonical="$(canonical_directory "$existing_ancestor")" || return 0
+  owned_run_pattern='^(/private/tmp/release-gate-([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})/runs/run-[0-9]{8}T[0-9]{6}Z-[0-9]+)(/|$)'
+  [[ "$existing_ancestor_canonical" =~ $owned_run_pattern ]] || return 0
+  containing_run="${BASH_REMATCH[1]}"
+  containing_udid="${BASH_REMATCH[2]}"
+  [ -d "$containing_run" ] && [ ! -L "$containing_run" ] || return 0
+  marker_matches_identity_for_udid "$containing_run/.release-gate-owned" "$containing_udid" || return 0
+  marker_matches_identity_for_udid "$containing_run/.release-gate-success" "$containing_udid" || return 0
+
+  preserve_marker="$containing_run/.release-gate-preserve"
+  if [ -e "$preserve_marker" ] || [ -L "$preserve_marker" ]; then
+    marker_matches_identity_for_udid "$preserve_marker" "$containing_udid" ||
+      refuse "caller-owned artifact preserve marker is unsafe: $preserve_marker"
+    return 0
+  fi
+  write_identity_marker_for_udid "$preserve_marker" "$containing_udid"
+  echo "release-gate: caller-owned artifact permanently preserves containing run: $containing_run" >&2
 }
 
 prepare_artifact_paths() {
@@ -191,6 +238,12 @@ prepare_artifact_paths() {
   RUN_DIR="${RUN_DIR_OVERRIDE:-$DEFAULT_GATE_ROOT}"
   RESULT_BUNDLE="${RESULT_BUNDLE_OVERRIDE:-$RUN_DIR/MakingTracksTests.xcresult}"
   ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
+  if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    case "$MODE" in
+      full|test) mark_containing_owned_run_preserved "$RESULT_BUNDLE" ;;
+      enumerate) mark_containing_owned_run_preserved "$ENUMERATED_TESTS_JSON" ;;
+    esac
+  fi
   mkdir -p "$RUN_DIR"
 }
 
@@ -228,7 +281,12 @@ prune_successful_artifacts() {
   local candidate
   local candidate_basename
   local candidate_canonical
+  local candidate_identity
   local candidate_parent_canonical
+  local cleanup_path
+  local cleanup_canonical
+  local cleanup_identity
+  local cleanup_parent_canonical
   local marker_mtime
   local now
 
@@ -251,6 +309,9 @@ prune_successful_artifacts() {
     candidate_parent_canonical="$(canonical_directory "$(dirname "$candidate_canonical")")" || continue
     [ "$candidate_parent_canonical" = "$RUNS_ROOT_CANONICAL" ] || continue
     [ "$candidate_canonical" = "$RUNS_ROOT_CANONICAL/$candidate_basename" ] || continue
+    if [ -e "$candidate/.release-gate-preserve" ] || [ -L "$candidate/.release-gate-preserve" ]; then
+      continue
+    fi
     marker_matches_identity "$candidate/.release-gate-owned" || continue
     marker_matches_identity "$candidate/.release-gate-success" || continue
     marker_mtime="$(stat -f %m "$candidate/.release-gate-success" 2>/dev/null)" || continue
@@ -260,8 +321,56 @@ prune_successful_artifacts() {
     age=$((now - marker_mtime))
     [ "$age" -gt "$SUCCESSFUL_ARTIFACT_MAX_AGE_SECONDS" ] || continue
 
-    if ! rm -rf -- "$candidate"; then
+    candidate_identity="$(stat -f '%d:%i' "$candidate" 2>/dev/null)" || continue
+    cleanup_path="$RUNS_ROOT/.release-gate-cleanup-$$-$candidate_basename"
+    if [ -e "$cleanup_path" ] || [ -L "$cleanup_path" ]; then
+      echo "release-gate: cleanup warning: quarantine path already exists: $cleanup_path" >&2
+      continue
+    fi
+    if ! mv "$candidate" "$cleanup_path"; then
+      echo "release-gate: cleanup warning: could not quarantine eligible successful artifact: $candidate" >&2
+      continue
+    fi
+
+    cleanup_identity="$(stat -f '%d:%i' "$cleanup_path" 2>/dev/null)" || cleanup_identity=""
+    cleanup_canonical="$(canonical_directory "$cleanup_path")" || cleanup_canonical=""
+    cleanup_parent_canonical="$(canonical_directory "$(dirname "$cleanup_path")")" || cleanup_parent_canonical=""
+    if [ "$cleanup_identity" != "$candidate_identity" ] ||
+       [ -z "$cleanup_canonical" ] ||
+       [ "$cleanup_parent_canonical" != "$RUNS_ROOT_CANONICAL" ] ||
+       [ -L "$cleanup_path" ] ||
+       ! marker_matches_identity "$cleanup_path/.release-gate-owned" ||
+       ! marker_matches_identity "$cleanup_path/.release-gate-success" ||
+       [ -e "$cleanup_path/.release-gate-preserve" ] ||
+       [ -L "$cleanup_path/.release-gate-preserve" ]; then
+      echo "release-gate: cleanup warning: candidate changed during quarantine; preserving it: $candidate" >&2
+      if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+        mv "$cleanup_path" "$candidate" ||
+          echo "release-gate: cleanup warning: changed candidate remains preserved at: $cleanup_path" >&2
+      else
+        echo "release-gate: cleanup warning: changed candidate remains preserved at: $cleanup_path" >&2
+      fi
+      continue
+    fi
+
+    marker_mtime="$(stat -f %m "$cleanup_path/.release-gate-success" 2>/dev/null)" || marker_mtime=""
+    case "$marker_mtime" in
+      ""|*[!0-9]*) age=0 ;;
+      *) age=$((now - marker_mtime)) ;;
+    esac
+    if [ "$age" -le "$SUCCESSFUL_ARTIFACT_MAX_AGE_SECONDS" ]; then
+      echo "release-gate: cleanup warning: candidate age changed during quarantine; preserving it: $candidate" >&2
+      mv "$cleanup_path" "$candidate" ||
+        echo "release-gate: cleanup warning: changed candidate remains preserved at: $cleanup_path" >&2
+      continue
+    fi
+
+    if ! rm -rf -- "$cleanup_path"; then
       echo "release-gate: cleanup warning: could not remove eligible successful artifact: $candidate" >&2
+      if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+        mv "$cleanup_path" "$candidate" ||
+          echo "release-gate: cleanup warning: partial artifact remains preserved at: $cleanup_path" >&2
+      fi
     fi
   done
 }
@@ -348,7 +457,8 @@ populate_only_testing_args() {
     case "$line" in
       ""|\#*) continue ;;
     esac
-    only_testing_args+=("-only-testing:$line")
+    test_args+=("-only-testing:$line")
+    only_testing_count=$((only_testing_count + 1))
   done < "$ONLY_TESTING_FILE"
 }
 
@@ -446,10 +556,10 @@ esac
 case "$MODE" in
   full|test)
     test_args=()
-    only_testing_args=()
+    only_testing_count=0
     populate_test_plan_args
     populate_only_testing_args
-    [ -z "$ONLY_TESTING_FILE" ] || [ "${#only_testing_args[@]}" -gt 0 ] ||
+    [ -z "$ONLY_TESTING_FILE" ] || [ "$only_testing_count" -gt 0 ] ||
       refuse "MT_RELEASE_GATE_ONLY_TESTING_FILE has no runnable entries: $ONLY_TESTING_FILE"
     phase "tests without building" run_xcodebuild "tests without building" test-without-building \
       "${test_args[@]}" \
@@ -457,7 +567,6 @@ case "$MODE" in
       -parallel-testing-enabled NO \
       -disable-concurrent-destination-testing \
       -derivedDataPath "$DERIVED_DATA" \
-      "${only_testing_args[@]}" \
       -resultBundlePath "$RESULT_BUNDLE"
     ;;
   enumerate)
