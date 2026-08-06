@@ -2658,5 +2658,108 @@ else
 fi
 
 echo
+echo "release-gate caller and CI artifact ownership:"
+
+CALLER_RESULT="$TMP/caller-result.xcresult"
+mkdir -p "$CALLER_RESULT"
+printf '%s\n' preserve >"$CALLER_RESULT/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+caller_result_out="$(run_artifact_gate test MT_RELEASE_GATE_RESULT_BUNDLE="$CALLER_RESULT" 2>&1)"
+caller_result_rc=$?
+set -e
+if [ "$caller_result_rc" -ne 0 ] &&
+   echo "$caller_result_out" | grep -q 'caller-owned result already exists' &&
+   [ -f "$CALLER_RESULT/sentinel" ] &&
+   [ ! -s "$XCODEBUILD_LOG" ]; then
+  record_ok "refuses and preserves an existing caller-named result before Xcode"
+else
+  record_fail "refuses and preserves an existing caller-named result before Xcode" \
+    "status=$caller_result_rc sentinel=$(test -f "$CALLER_RESULT/sentinel" && echo present || echo missing) output='$(echo "$caller_result_out" | tail -1)'"
+fi
+
+CALLER_RUN="$TMP/caller-run"
+mkdir -p "$CALLER_RUN/MakingTracksTests.xcresult"
+printf '%s\n' preserve >"$CALLER_RUN/MakingTracksTests.xcresult/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+caller_run_out="$(run_artifact_gate test MT_RELEASE_GATE_RUN_DIR="$CALLER_RUN" 2>&1)"
+caller_run_rc=$?
+set -e
+if [ "$caller_run_rc" -ne 0 ] &&
+   echo "$caller_run_out" | grep -q 'caller-owned result already exists' &&
+   [ -f "$CALLER_RUN/MakingTracksTests.xcresult/sentinel" ] &&
+   [ ! -s "$XCODEBUILD_LOG" ]; then
+  record_ok "refuses and preserves an existing result beneath a caller-named run directory"
+else
+  record_fail "refuses and preserves an existing result beneath a caller-named run directory" \
+    "status=$caller_run_rc sentinel=$(test -f "$CALLER_RUN/MakingTracksTests.xcresult/sentinel" && echo present || echo missing) output='$(echo "$caller_run_out" | tail -1)'"
+fi
+
+FRESH_CALLER_RESULT="$TMP/fresh-caller-result.xcresult"
+: >"$XCODEBUILD_LOG"
+set +e
+fresh_caller_out="$(run_artifact_gate test MT_RELEASE_GATE_RESULT_BUNDLE="$FRESH_CALLER_RESULT" 2>&1)"
+fresh_caller_rc=$?
+set -e
+if [ "$fresh_caller_rc" -eq 0 ] &&
+   [ -f "$FRESH_CALLER_RESULT/Info.plist" ] &&
+   [ ! -e "$(dirname "$FRESH_CALLER_RESULT")/.release-gate-owned" ] &&
+   [ ! -e "$(dirname "$FRESH_CALLER_RESULT")/.release-gate-success" ]; then
+  record_ok "populates a fresh caller-named result without enrolling it in cleanup"
+else
+  record_fail "populates a fresh caller-named result without enrolling it in cleanup" \
+    "status=$fresh_caller_rc output='$(echo "$fresh_caller_out" | tail -1)'"
+fi
+
+CALLER_ENUMERATION="$TMP/caller-enumerated-tests.json"
+: >"$XCODEBUILD_LOG"
+set +e
+caller_enumeration_out="$(run_artifact_gate enumerate MT_RELEASE_GATE_ENUMERATED_TESTS_JSON="$CALLER_ENUMERATION" 2>&1)"
+caller_enumeration_rc=$?
+set -e
+if [ "$caller_enumeration_rc" -eq 0 ] &&
+   grep -q '"tests":\[\]' "$CALLER_ENUMERATION"; then
+  record_ok "preserves an explicit enumeration artifact outside the cleanup root"
+else
+  record_fail "preserves an explicit enumeration artifact outside the cleanup root" \
+    "status=$caller_enumeration_rc output='$(echo "$caller_enumeration_out" | tail -1)'"
+fi
+
+printf '%s\n' '#!/usr/bin/env bash' 'cat' >"$FAKE_BIN/xcbeautify"
+chmod +x "$FAKE_BIN/xcbeautify"
+CI_RUN="$TMP/ci-release-run"
+CI_RESULT="$CI_RUN/ci-result.xcresult"
+mkdir -p "$CI_RESULT"
+printf '%s\n' replace >"$CI_RESULT/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+ci_artifact_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    GITHUB_ACTIONS=true \
+    MT_RELEASE_GATE_SKIP_LOCK=1 \
+    MT_RELEASE_GATE_CI_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_RUN_DIR="$CI_RUN" \
+    MT_RELEASE_GATE_RESULT_BUNDLE="$CI_RESULT" \
+    MT_RELEASE_GATE_DERIVED_DATA="$SAFE_TEST_ROOT/ci-derived-data" \
+    MT_RELEASE_GATE_MODE=test \
+    "$RELEASE_GATE" 2>&1
+)"
+ci_artifact_rc=$?
+set -e
+if [ "$ci_artifact_rc" -eq 0 ] &&
+   [ -f "$CI_RESULT/Info.plist" ] &&
+   [ ! -e "$CI_RESULT/sentinel" ] &&
+   [ ! -e "$CI_RUN/.release-gate-owned" ] &&
+   [ ! -e "$CI_RUN/.release-gate-success" ]; then
+  record_ok "keeps CI explicit-artifact replacement outside local ownership markers"
+else
+  record_fail "keeps CI explicit-artifact replacement outside local ownership markers" \
+    "status=$ci_artifact_rc sentinel=$(test -e "$CI_RESULT/sentinel" && echo present || echo removed) output='$(echo "$ci_artifact_out" | tail -1)'"
+fi
+
+echo
 echo "sim-lock: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
