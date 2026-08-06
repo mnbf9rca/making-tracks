@@ -9,6 +9,8 @@ Format: one line per transition, newest last:
 
 ## Active
 
+- 2026-08-06T21:47Z codex1 #632 claimed — fix-now repair for #523/#627 fallout: make the release-gate pytest fixture commit a minimal `ios/Package.resolved` and isolate disposable commits from host signing; production gate invariant unchanged
+- 2026-08-06T21:47Z codex1 #632 branch — `fix-632-release-gate-package-fixture` from fresh `origin/ios` `7a3fa31`; isolated worktree `.worktrees/fix-632-release-gate-package-fixture`; no simulator allocated
 - 2026-07-29T13:35Z codex3 #497 claimed — rewrite `sim-lock.sh` for per-simulator locking plus a two-gate global cap; fold #544's new-host process-fixture repair into the same row
 - 2026-07-29T13:40Z codex3 #497 branch — `wp-infra-sim-concurrency` at `bde9c0a21beaa90ab2e358b2da2e966567ea9fac`; #497 inode-swap evidence grounded and baseline harness recorded at 8 passed / 3 failed after installing Homebrew `flock`
 - 2026-07-29T13:44Z codex3 #497 branch — baseline correction: sandboxed `pgrep` cannot enumerate host processes; unchanged harness passes 11 passed / 0 failed with host access, so #544 is not a repository defect and is queued for not-planned closure
