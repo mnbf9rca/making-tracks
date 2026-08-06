@@ -160,10 +160,11 @@ Derived data and result bundles are the biggest disk producers on this shared ho
    The bounded evidence-preserving lifecycles are:
    - A gate-owned local run keeps the default run and result artifacts it creates in one unique,
      simulator-scoped directory. Only completion of every phase marks it successful. A later successful
-     fully-default `full` gate for that simulator may remove an owned success only when that success proof
-     is strictly older than `86400` seconds. The gate never deletes failed or interrupted unmarked runs,
-     and a caller-named artifact remains caller-owned. These `/private/tmp` runs are purgeable transient
-     evidence, not durable storage; the exact ownership, marker and pruning contract lives in the `ios`
+     `full` gate for that simulator, with no caller-supplied run, result, test-filter or `.xctestrun`
+     override, may remove an owned success only when that success proof is strictly older than `86400`
+     seconds. The gate never deletes failed or interrupted unmarked runs. A caller-named artifact remains
+     caller-owned. These `/private/tmp` runs are purgeable transient evidence, not durable storage; the
+     exact ownership, marker and pruning contract lives in the `ios`
      branch's `docs/ios-gate-ledger.md` → *Local result-artifact retention*.
    - CI owns its explicitly named result bundle and follows the workflow's replacement, upload and
      retention lifecycle; it is never enrolled in local gate-owned cleanup.
