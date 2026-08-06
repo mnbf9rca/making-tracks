@@ -58,7 +58,10 @@ if [[ ! "$GATE_UDID" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f
   echo "release-gate: refused: $DESTINATION_VARIABLE id must be a valid CoreSimulator UUID" >&2
   exit 1
 fi
-RUN_DIR="${MT_RELEASE_GATE_RUN_DIR:-/private/tmp/release-gate-$GATE_UDID}"
+DEFAULT_GATE_ROOT="/private/tmp/release-gate-$GATE_UDID"
+RUN_DIR_OVERRIDE="${MT_RELEASE_GATE_RUN_DIR:-}"
+RESULT_BUNDLE_OVERRIDE="${MT_RELEASE_GATE_RESULT_BUNDLE:-}"
+RUN_DIR="${RUN_DIR_OVERRIDE:-$DEFAULT_GATE_ROOT}"
 DERIVED_DATA="${MT_RELEASE_GATE_DERIVED_DATA:-}"
 RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
 MODE="${MT_RELEASE_GATE_MODE:-full}"
@@ -66,6 +69,12 @@ ONLY_TESTING_FILE="${MT_RELEASE_GATE_ONLY_TESTING_FILE:-}"
 XCTESTRUN_FILE="${MT_RELEASE_GATE_XCTESTRUN_FILE:-}"
 ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
 DERIVED_DATA_MAX_AGE_SECONDS="${MT_RELEASE_GATE_DERIVED_DATA_MAX_AGE_SECONDS:-604800}"
+ARTIFACT_MARKER_SCHEMA="release-gate-artifact-v1"
+OWNS_ARTIFACT_RUN=false
+RUNS_ROOT=""
+RUNS_ROOT_CANONICAL=""
+OWNERSHIP_MARKER=""
+SUCCESS_MARKER=""
 
 refuse() {
   echo "release-gate: refused: $1" >&2
@@ -74,6 +83,123 @@ refuse() {
 
 mtime_seconds() {
   stat -f %m "$1" 2>/dev/null || echo 0
+}
+
+canonical_directory() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+marker_matches_identity() {
+  local byte_count
+  local expected_byte_count
+  local line_count
+  local marker="$1"
+
+  [ -f "$marker" ] && [ ! -L "$marker" ] || return 1
+  line_count="$(wc -l <"$marker" | tr -d '[:space:]')"
+  byte_count="$(wc -c <"$marker" | tr -d '[:space:]')"
+  expected_byte_count="$(printf '%s\nudid=%s\n' "$ARTIFACT_MARKER_SCHEMA" "$GATE_UDID" | wc -c | tr -d '[:space:]')"
+  [ "$line_count" = "2" ] &&
+    [ "$byte_count" = "$expected_byte_count" ] &&
+    [ "$(sed -n '1p' "$marker")" = "$ARTIFACT_MARKER_SCHEMA" ] &&
+    [ "$(sed -n '2p' "$marker")" = "udid=$GATE_UDID" ]
+}
+
+write_identity_marker() {
+  local marker="$1"
+
+  printf '%s\nudid=%s\n' "$ARTIFACT_MARKER_SCHEMA" "$GATE_UDID" >"$marker"
+  marker_matches_identity "$marker" ||
+    refuse "could not create an exact release-gate identity marker: $marker"
+}
+
+require_real_directory() {
+  local label="$1"
+  local path="$2"
+
+  [ ! -L "$path" ] || refuse "$label must not be a symlink: $path"
+  if [ -e "$path" ] && [ ! -d "$path" ]; then
+    refuse "$label must be a directory: $path"
+  fi
+}
+
+prepare_artifact_paths() {
+  local gate_root_canonical
+  local run_name
+
+  if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    case "$MODE" in
+      full|test|enumerate)
+        if [ -z "$RUN_DIR_OVERRIDE" ] && [ -z "$RESULT_BUNDLE_OVERRIDE" ]; then
+          OWNS_ARTIFACT_RUN=true
+        fi
+        ;;
+    esac
+  fi
+
+  if [ "$OWNS_ARTIFACT_RUN" = "true" ]; then
+    require_real_directory "release-gate artifact root" "$DEFAULT_GATE_ROOT"
+    mkdir -p "$DEFAULT_GATE_ROOT"
+    gate_root_canonical="$(canonical_directory "$DEFAULT_GATE_ROOT")" ||
+      refuse "could not canonicalize release-gate artifact root: $DEFAULT_GATE_ROOT"
+    [ "$gate_root_canonical" = "$DEFAULT_GATE_ROOT" ] ||
+      refuse "release-gate artifact root resolves outside its validated UUID path: $DEFAULT_GATE_ROOT"
+
+    RUNS_ROOT="$DEFAULT_GATE_ROOT/runs"
+    require_real_directory "release-gate runs root" "$RUNS_ROOT"
+    mkdir -p "$RUNS_ROOT"
+    RUNS_ROOT_CANONICAL="$(canonical_directory "$RUNS_ROOT")" ||
+      refuse "could not canonicalize release-gate runs root: $RUNS_ROOT"
+    [ "$RUNS_ROOT_CANONICAL" = "$RUNS_ROOT" ] ||
+      refuse "release-gate runs root resolves outside its validated UUID path: $RUNS_ROOT"
+
+    run_name="run-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    RUN_DIR="$RUNS_ROOT/$run_name"
+    if [ -e "$RUN_DIR" ] || [ -L "$RUN_DIR" ]; then
+      refuse "release-gate owned run path already exists: $RUN_DIR"
+    fi
+    mkdir "$RUN_DIR"
+    OWNERSHIP_MARKER="$RUN_DIR/.release-gate-owned"
+    SUCCESS_MARKER="$RUN_DIR/.release-gate-success"
+    write_identity_marker "$OWNERSHIP_MARKER"
+    RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
+    ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
+    echo "release-gate: owned artifacts: $RUN_DIR" >&2
+    return
+  fi
+
+  RUN_DIR="${RUN_DIR_OVERRIDE:-$DEFAULT_GATE_ROOT}"
+  RESULT_BUNDLE="${RESULT_BUNDLE_OVERRIDE:-$RUN_DIR/MakingTracksTests.xcresult}"
+  ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
+  mkdir -p "$RUN_DIR"
+}
+
+validate_current_owned_run() {
+  local current_canonical
+  local current_parent_canonical
+
+  [ "$OWNS_ARTIFACT_RUN" = "true" ] || return 0
+  [ -d "$RUN_DIR" ] && [ ! -L "$RUN_DIR" ] ||
+    refuse "owned release-gate run is no longer a real directory: $RUN_DIR"
+  current_canonical="$(canonical_directory "$RUN_DIR")" ||
+    refuse "could not canonicalize owned release-gate run: $RUN_DIR"
+  current_parent_canonical="$(canonical_directory "$(dirname "$current_canonical")")" ||
+    refuse "could not canonicalize owned release-gate run parent: $RUN_DIR"
+  [ "$current_parent_canonical" = "$RUNS_ROOT_CANONICAL" ] ||
+    refuse "owned release-gate run escaped its runs root: $RUN_DIR"
+  [[ "$(basename "$current_canonical")" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] ||
+    refuse "owned release-gate run has an invalid name: $RUN_DIR"
+  marker_matches_identity "$OWNERSHIP_MARKER" ||
+    refuse "owned release-gate marker is missing or invalid: $OWNERSHIP_MARKER"
+}
+
+finalize_owned_artifacts() {
+  [ "$OWNS_ARTIFACT_RUN" = "true" ] || return 0
+  validate_current_owned_run
+  if [ -e "$SUCCESS_MARKER" ] || [ -L "$SUCCESS_MARKER" ]; then
+    refuse "release-gate success marker already exists: $SUCCESS_MARKER"
+  fi
+  write_identity_marker "$SUCCESS_MARKER"
 }
 
 prune_derived_data_if_stale() {
@@ -214,11 +340,19 @@ if [ -z "$DERIVED_DATA" ]; then
 fi
 DERIVED_DATA="$(mt_refuse_tmp_derived_data "$DERIVED_DATA" "release-gate:")" || exit 1
 
-mkdir -p "$RUN_DIR"
+prepare_artifact_paths
 prune_derived_data_if_stale
 mkdir -p "$DERIVED_DATA"
-[ "${MT_RELEASE_GATE_RESULT_BUNDLE:-}" = "" ] || RESULT_BUNDLE="$MT_RELEASE_GATE_RESULT_BUNDLE"
-rm -rf "$RESULT_BUNDLE"
+case "$MODE" in
+  full|test)
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+      rm -rf "$RESULT_BUNDLE"
+    elif [ "$OWNS_ARTIFACT_RUN" != "true" ] &&
+         { [ -e "$RESULT_BUNDLE" ] || [ -L "$RESULT_BUNDLE" ]; }; then
+      refuse "caller-owned result already exists; move it to \$HOME/Library/Application Support/making-tracks-gates/evidence/ or remove it after extraction: $RESULT_BUNDLE"
+    fi
+    ;;
+esac
 
 phase "simulator boot" xcrun simctl bootstatus "$(destination_udid)" -b
 
@@ -279,3 +413,4 @@ case "$MODE" in
 esac
 
 touch "$DERIVED_DATA"
+finalize_owned_artifacts

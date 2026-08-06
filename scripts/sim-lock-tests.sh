@@ -2105,8 +2105,44 @@ printf '%s\n' \
 # shellcheck disable=SC2016 # Expanded when the fake xcodebuild runs.
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  'printf "%s\n" "$*" >>"$MT_TEST_XCODEBUILD_LOG"' >"$FAKE_BIN/xcodebuild"
+  'printf "%s\n" "$*" >>"$MT_TEST_XCODEBUILD_LOG"' \
+  'test_status=0' \
+  'case " $* " in *" test-without-building "*) test_status="${MT_TEST_XCODEBUILD_TEST_STATUS:-0}" ;; esac' \
+  'while [ "$#" -gt 0 ]; do' \
+  '  case "$1" in' \
+  '    -resultBundlePath)' \
+  '      shift' \
+  '      mkdir -p "$1"' \
+  '      printf "%s\n" fake-result >"$1/Info.plist"' \
+  '      ;;' \
+  '    -test-enumeration-output-path)' \
+  '      shift' \
+  '      mkdir -p "$(dirname "$1")"' \
+  '      printf "%s\n" "{\"tests\":[]}" >"$1"' \
+  '      ;;' \
+  '  esac' \
+  '  shift' \
+  'done' \
+  'exit "$test_status"' >"$FAKE_BIN/xcodebuild"
 chmod +x "$FAKE_BIN/git" "$FAKE_BIN/xcrun" "$FAKE_BIN/xcodebuild"
+
+run_artifact_gate() {
+  local mode="$1"
+  shift
+
+  env "$@" \
+    PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_SIM_LOCK_SEAT=codex1 \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_DERIVED_DATA="$SAFE_TEST_ROOT/artifact-derived-data" \
+    MT_RELEASE_GATE_MODE="$mode" \
+    "$RELEASE_GATE"
+}
 
 rm -f "$XCODEBUILD_LOG"
 set +e
@@ -2461,6 +2497,61 @@ if [ "$derived_a" = "$expected_a" ] && [ "$derived_b" = "$expected_b" ]; then
 else
   record_fail "derives the exact persistent default DerivedData path for the selected seat" \
     "first='$derived_a' expected='$expected_a' second='$derived_b' expected='$expected_b'"
+fi
+
+echo
+echo "release-gate artifact ownership:"
+
+ARTIFACT_RUNS_A="$RELEASE_RUN_DIR_A/runs"
+EXPECTED_ARTIFACT_MARKER="$(printf 'release-gate-artifact-v1\nudid=%s' "$RELEASE_UDID_A")"
+
+rm -rf "$RELEASE_RUN_DIR_A"
+: >"$XCODEBUILD_LOG"
+set +e
+owned_success_out="$(run_artifact_gate test 2>&1)"
+owned_success_rc=$?
+set -e
+owned_success_runs=("$ARTIFACT_RUNS_A"/run-*)
+if [ "$owned_success_rc" -eq 0 ] &&
+   [ "${#owned_success_runs[@]}" -eq 1 ] &&
+   [ -d "${owned_success_runs[0]}/MakingTracksTests.xcresult" ] &&
+   [ ! -L "${owned_success_runs[0]}/.release-gate-owned" ] &&
+   [ "$(cat "${owned_success_runs[0]}/.release-gate-owned" 2>/dev/null)" = "$EXPECTED_ARTIFACT_MARKER" ] &&
+   [ ! -L "${owned_success_runs[0]}/.release-gate-success" ] &&
+   [ "$(cat "${owned_success_runs[0]}/.release-gate-success" 2>/dev/null)" = "$EXPECTED_ARTIFACT_MARKER" ]; then
+  record_ok "successful local artifact run is uniquely owned and success-marked"
+else
+  record_fail "successful local artifact run is uniquely owned and success-marked" \
+    "status=$owned_success_rc runs=${#owned_success_runs[@]} output='$(echo "$owned_success_out" | tail -1)'"
+fi
+
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A/run-20260801T000000Z-9001"
+printf 'release-gate-artifact-v1\nudid=%s\n' "$RELEASE_UDID_A" \
+  >"$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/.release-gate-owned"
+printf 'release-gate-artifact-v1\nudid=%s\n' "$RELEASE_UDID_A" \
+  >"$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/.release-gate-success"
+printf '%s\n' preserve >"$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+owned_failure_out="$(run_artifact_gate full MT_TEST_XCODEBUILD_TEST_STATUS=9 2>&1)"
+owned_failure_rc=$?
+set -e
+owned_failure_runs=("$ARTIFACT_RUNS_A"/run-*)
+owned_failure_dir=""
+for candidate in "${owned_failure_runs[@]}"; do
+  [ "$(basename "$candidate")" = "run-20260801T000000Z-9001" ] || owned_failure_dir="$candidate"
+done
+if [ "$owned_failure_rc" -eq 9 ] &&
+   [ -n "$owned_failure_dir" ] &&
+   [ -d "$owned_failure_dir/MakingTracksTests.xcresult" ] &&
+   [ "$(cat "$owned_failure_dir/.release-gate-owned" 2>/dev/null)" = "$EXPECTED_ARTIFACT_MARKER" ] &&
+   [ ! -e "$owned_failure_dir/.release-gate-success" ] &&
+   [ -f "$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/sentinel" ]; then
+  record_ok "failed full gate preserves its unmarked result and does not prune"
+else
+  record_fail "failed full gate preserves its unmarked result and does not prune" \
+    "status=$owned_failure_rc failure_dir='$owned_failure_dir' runs=${#owned_failure_runs[@]} output='$(echo "$owned_failure_out" | tail -1)'"
 fi
 
 echo
