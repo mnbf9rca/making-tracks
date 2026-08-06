@@ -115,6 +115,8 @@
     font-size: 17px;
     font-weight: 470;
   }
+  .menu-row.confirmation { justify-content: space-between; }
+  .confirmation-check { color: var(--accent); font-size: 19px; font-weight: 700; }
   .menu-row + .menu-row { border-top: 1px solid rgba(107, 103, 95, .2); }
   .annotation {
     position: absolute;
@@ -151,7 +153,7 @@
 </style>
 </head>
 <body>
-<main class="phone" aria-label="#375 pre-ruling Copy ID menu render">
+<main class="phone" aria-label="#375 Copy ID menu render">
   <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
   <div class="map-label">Making Tracks · Norwich</div>
   <section class="sheet" aria-label="Place card">
@@ -173,16 +175,26 @@
   </section>
   <div class="menu" aria-label="Open More menu">
     <div class="menu-row">Add to list</div>
-    <div class="menu-row">Copy ID</div>
+    <div class="menu-row" id="copy-row">Copy ID</div>
   </div>
-  <div class="annotation">Recommended: copy the exact <b>mt1_…</b> value, dismiss the native menu, and announce “Place ID copied” to VoiceOver. No visible toast or inline identifier.</div>
+  <div class="annotation" id="annotation">Recommended: copy the exact <b>mt1_…</b> value, dismiss the native menu, and announce “Place ID copied” to VoiceOver. No visible toast or inline identifier.</div>
   <div class="home"></div>
 </main>
 <script>
   const variant = new URLSearchParams(location.search).get("variant");
-  if (variant === "ax") {
+  if (variant === "ax" || variant === "copied-ax") {
     document.body.classList.add("ax");
     document.title = "#375 Copy ID menu ruling — AX — 390×844";
+  }
+  if (variant === "copied" || variant === "copied-ax") {
+    document.body.classList.add("copied");
+    const copyRow = document.querySelector("#copy-row");
+    copyRow.classList.add("confirmation");
+    copyRow.innerHTML = "<span>Copied</span><span class=\"confirmation-check\" aria-hidden=\"true\">✓</span>";
+    document.querySelector("#annotation").innerHTML = "<b>Rob ruled:</b> keep the native menu presented, change this row to <b>Copied ✓</b> for 1 second, announce “Place ID copied” to VoiceOver, then dismiss. No toast or inline identifier.";
+    document.title = variant === "copied-ax"
+      ? "#375 Copied confirmation — AX — 390×844"
+      : "#375 Copied confirmation — 390×844";
   }
 </script>
 </body>

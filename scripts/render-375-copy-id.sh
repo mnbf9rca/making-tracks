@@ -56,3 +56,5 @@ render() {
 
 render default 375-copy-id-menu.png
 render ax 375-copy-id-menu-ax.png
+render copied 375-copy-id-menu-copied.png
+render copied-ax 375-copy-id-menu-copied-ax.png
