@@ -52,6 +52,7 @@ Format: one line per transition, newest last:
 - 2026-08-01T17:16Z codex4 #575 tests green — default and AX focused UI tests each passed 1/1; scaled-inset mutation failed because AX no longer exceeded default, forced-rest live-marker mutation failed with no exact pressed candidate, both production sources were restored exactly, and normal regeneration passed after each restoration
 - 2026-08-06T16:18Z codex3 #375 claimed — planner-assigned Copy ID action; issue classified `enhancement` + `requires-mockups`; #454's exception is system-controlled availability only, so implementation waits for the standard mockup validation and Rob ruling
 - 2026-08-06T16:18Z codex3 #375 branch — `fix-375-copy-id-action` from fresh `origin/ios` `7a3fa31`; isolated worktree `.worktrees/fix-375-copy-id-action`; seat `codex3`
+- 2026-08-06T16:55Z codex3 #375 ruled/validated — Rob selected the in-row flash; public UIKit feasibility passed; reviewer validated exact published design head `1b38164` with no findings and no further Rob roundtrip; production proceeds TDD with the existing More/Add-to-list UI routes explicitly re-proven
 
 ## Done (pre-phase)
 
