@@ -62,7 +62,7 @@ These issue-routed packets are proposals until reviewer validation and Rob's exp
 
 | Asset | What it shows |
 |---|---|
-| [`375-copy-id-menu.html`](375-copy-id-menu.html) + `375-copy-id-menu{,-ax}.png` | #375's exact 390×844 default and AX proposal: append `Copy ID` after the existing `Add to list` row in the native place-card More menu, copy only the raw `mt1_…` value, use native menu dismissal as sighted feedback, and announce success to VoiceOver without exposing the identifier in the card hierarchy. The menu geometry is illustrative and system-owned; row order, payload, and feedback are the decision. [`375-copy-id-menu-ruling.md`](375-copy-id-menu-ruling.md) records alternatives, constraints, accessibility, reproduction, and SHA-256 values. Regenerate with `./scripts/render-375-copy-id.sh`. |
+| [`375-copy-id-menu.html`](375-copy-id-menu.html) + `375-copy-id-menu{,-ax}.png` | **Evidence class: Deterministic fixture. Reviewer validated at `d0b0379`; Rob ruling pending.** #375's exact 390×844 default and AX proposal: append `Copy ID` after the existing `Add to list` row in the native place-card More menu, copy only the raw `mt1_…` value, use native menu dismissal as sighted feedback, and announce success to VoiceOver without exposing the identifier in the card hierarchy. The menu geometry is illustrative and system-owned; row order, payload, and feedback are the decision. [`375-copy-id-menu-ruling.md`](375-copy-id-menu-ruling.md) records alternatives, constraints, accessibility, reproduction, and SHA-256 values; SHA-256 is the byte-reproduction oracle. Regenerate with `./scripts/render-375-copy-id.sh`. |
 
 ## Phase 2 wireframes awaiting ruling
 

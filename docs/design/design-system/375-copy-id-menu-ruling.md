@@ -1,6 +1,8 @@
 # #375 Copy ID menu — pre-ruling packet
 
-Status: **PRE-RULING / DO NOT IMPLEMENT**. Build agent authored; reviewer validation and Rob's ruling remain required.
+Status: **REVIEWER VALIDATED / DO NOT IMPLEMENT**. Build agent authored; reviewer validated the proposal at `d0b0379`; Rob's ruling remains required.
+
+Evidence class: **Deterministic fixture.** SHA-256 is the byte-reproduction oracle.
 
 ## Request
 
@@ -33,13 +35,17 @@ The two frames are exactly 390×844 CSS pixels. The default render retains the c
 
 The decision carried by the renders is row order, copy, and feedback—not private system-menu pixels. VoiceOver must encounter `Add to list`, then `Copy ID`; activating Copy ID must announce success without reading the long identifier aloud. The raw ID is placed only on the system pasteboard after an explicit user action.
 
+## R16 proof-absence record
+
+The filled `Seen` control in these frames reports an ON state under R16; it is not a filled action. The render preserves A2's shipped R15 morphology—tonal means available, filled means on, and quiet means a momentary verb—so it introduces no filled action beside the state cluster. **this surface does not pair a filled action with a state cluster; the R16 proof obligation travels to the first surface that does.**
+
 | Default | Accessibility size |
 |---|---|
 | ![Default #375 Copy ID menu](375-copy-id-menu.png) | ![AX #375 Copy ID menu](375-copy-id-menu-ax.png) |
 
 ## Reproduction
 
-Run `./scripts/render-375-copy-id.sh`. The packet uses Chromium 151.0.7922.34 at device scale factor 1 and captures the HTML source directly at 390×844.
+Run `./scripts/render-375-copy-id.sh`. The deterministic-fixture packet uses Chromium 151.0.7922.34 at device scale factor 1 and captures the HTML source directly at 390×844.
 An unchanged second render reproduced both files byte-for-byte.
 
 - `375-copy-id-menu.png`: `868bd85fa2267c24ada1e9da2fa8b30a3c2627e32808b03c98863ebf87a89ff1`
