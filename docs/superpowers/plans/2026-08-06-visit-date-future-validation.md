@@ -11,11 +11,12 @@
 ## Global Constraints
 
 - “Future” means a Gregorian calendar day after the injected clock's day in the supplied local time zone, not a raw timestamp comparison and not UTC.
-- Every time on today's date is valid; the picker range ends at 23:59:59 on that calendar day.
+- Every finite time on today's date is valid; the picker range ends at the greatest representable `Date` before the next local calendar day.
 - An existing future selection is displayed as today but is not written until the user taps Save day.
 - A rejected database update changes neither `visited_at` nor `visit_order` and emits no controller change event.
 - Do not change Visit date copy, hierarchy, styling, accessibility identifiers, fixture seeding, reorder, or move behavior.
 - Add no mock, source-text assertion, schema, migration, or new dependency.
+- Rob's issue-only visual exception covers the stock picker's system-controlled disabled availability because resting pixels, copy, and hierarchy do not change; any drawn-pixel, copy, or hierarchy change requires the full mockup flow.
 - All simulator access uses `./scripts/sim-lock.sh --seat codex1`; the final gate uses `MT_GATE_MAX_CONCURRENT=3`.
 
 ---
@@ -33,7 +34,7 @@
 - Consumes: `AppDatabase.now: @Sendable () -> Date` and the `Calendar` already supplied to `updateVisitDate`.
 - Produces: `public struct VisitDateEditPolicy`, `public init(now:calendar:)`, `public let today: Date`, `public let latestSelectableDate: Date`, `public func contains(_:) -> Bool`, `public func clamped(_:) -> Date`, and `AppDatabaseError.futureVisitDate`.
 
-- [ ] **Step 1: Add failing policy tests with literal local-day expectations**
+- [x] **Step 1: Add failing policy tests with literal local-day expectations**
 
 Create `VisitDateEditPolicyTests.swift`. Build dates from literal components using an explicitly time-zoned Gregorian calendar, then assert:
 
@@ -84,7 +85,7 @@ These epoch literals were independently checked with Foundation against both
 UTC and `Pacific/Kiritimati`; expected values are not derived through
 `VisitDateEditPolicy`.
 
-- [ ] **Step 2: Add the failing database rejection test**
+- [x] **Step 2: Add the failing database rejection test**
 
 Extend `InteractionsTests` with a real in-memory database whose `now` is fixed. Record a visit with a nonzero `visitOrder`, request tomorrow in the same explicit calendar, and assert the dedicated error plus byte-for-byte stored state:
 
@@ -119,7 +120,7 @@ func testUpdateVisitDateRejectsTomorrowWithoutMutatingTheVisit() throws {
 }
 ```
 
-- [ ] **Step 3: Run the focused host tests and verify RED**
+- [x] **Step 3: Run the focused host tests and verify RED**
 
 Run:
 
@@ -130,7 +131,7 @@ swift test --package-path ios --filter InteractionsTests.testUpdateVisitDateReje
 
 Expected: the policy target fails to compile because `VisitDateEditPolicy` does not exist; after temporarily limiting the run to the database test if necessary, that test fails because `futureVisitDate` does not exist or the future write succeeds.
 
-- [ ] **Step 4: Add the minimal shared policy**
+- [x] **Step 4: Add the minimal shared policy**
 
 Create `VisitDateEditPolicy.swift`:
 
@@ -150,11 +151,14 @@ public struct VisitDateEditPolicy: Sendable {
         self.calendar = calendar
         today = calendar.startOfDay(for: now)
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? now
-        latestSelectableDate = calendar.date(byAdding: .second, value: -1, to: tomorrow) ?? now
+        latestSelectableDate = Date(
+            timeIntervalSinceReferenceDate: tomorrow.timeIntervalSinceReferenceDate.nextDown
+        )
     }
 
     public func contains(_ date: Date) -> Bool {
-        calendar.startOfDay(for: date) <= today
+        guard date.timeIntervalSinceReferenceDate.isFinite else { return false }
+        return calendar.startOfDay(for: date) <= today
     }
 
     public func clamped(_ date: Date) -> Date {
@@ -163,7 +167,7 @@ public struct VisitDateEditPolicy: Sendable {
 }
 ```
 
-- [ ] **Step 5: Enforce the database invariant before the write**
+- [x] **Step 5: Enforce the database invariant before the write**
 
 Add `case futureVisitDate` to `AppDatabaseError`. At the start of `updateVisitDate`, before `dbQueue.write`, construct the policy from `now()` and the supplied calendar and fail closed:
 
@@ -176,7 +180,7 @@ guard policy.contains(targetDay) else {
 
 Leave the existing transaction body and time-of-day/order logic unchanged.
 
-- [ ] **Step 6: Run focused and full host tests and verify GREEN**
+- [x] **Step 6: Run focused and full host tests and verify GREEN**
 
 Run:
 
@@ -188,7 +192,7 @@ swift test --package-path ios
 
 Expected: all new focused tests pass and the complete host suite reports zero failures.
 
-- [ ] **Step 7: Commit the independently testable data invariant**
+- [x] **Step 7: Commit the independently testable data invariant**
 
 ```bash
 git add ios/Sources/MakingTracksData/VisitDateEditPolicy.swift \
@@ -205,14 +209,16 @@ git commit -S -m "fix: reject future visit dates"
 
 **Files:**
 - Modify: `ios/App/Sources/Map/MapScreen.swift:5996-6087`
+- Modify: `ios/App/Tests/AppShellTests.swift`
+- Modify: `ios/Tests/MakingTracksTilesTests/LoggingPrivacyTests.swift`
 
 **Interfaces:**
 - Consumes: `VisitDateEditPolicy(now:calendar:)`, `latestSelectableDate`, and `clamped(_:)` from Task 1.
-- Produces: a compact `DatePicker` whose selectable range ends at today's last local second and whose initial selection is valid even for a legacy future row.
+- Produces: a compact `DatePicker` whose selectable range ends at today's greatest representable local instant and whose initial selection is valid even for a legacy future row.
 
-- [ ] **Step 1: Capture one policy for the editor session**
+- [x] **Step 1: Capture one policy for the editor session**
 
-Add a stored `private let datePolicy: VisitDateEditPolicy`. Extend the private view initializer with defaulted `now` and `calendar` parameters, construct one policy, store it, and initialize state through it:
+Add a stored `private let datePolicy: VisitDateEditPolicy`. Extend the view initializer with defaulted `now` and `calendar` parameters, construct one policy, store it, and initialize state through it:
 
 ```swift
 init(
@@ -235,7 +241,7 @@ init(
 
 Keep all current call sites source-compatible through the defaulted parameters.
 
-- [ ] **Step 2: Bound the existing picker without changing its presentation**
+- [x] **Step 2: Bound the existing picker without changing its presentation**
 
 Add the range argument to the existing `DatePicker`:
 
@@ -253,18 +259,25 @@ DatePicker(
 
 Do not alter modifiers, accessibility identifiers, overlay text, button copy, or layout.
 
-- [ ] **Step 3: Compile through the full host suite**
+- [x] **Step 3: Prove the mounted picker wiring**
 
-Run:
+Expose the editor at internal visibility for `@testable import`, mount it in a
+`UIHostingController`, recursively find the real `UIDatePicker`, and assert its
+initial date is clamped to today and its maximum equals the policy's exact
+last representable instant. Run:
 
 ```bash
-swift test --package-path ios
-git diff --check
+MT_GATE_MAX_CONCURRENT=3 ./scripts/sim-lock.sh --seat codex1 xcodebuild test \
+  -project ios/App/MakingTracks.xcodeproj -scheme MakingTracks -configuration Debug \
+  -parallel-testing-enabled NO -disable-concurrent-destination-testing \
+  -only-testing:MakingTracksTests/AppShellTests/testVisitDateEditorMountsClampedSelectionAndLocalDayMaximum \
+  -onlyUsePackageVersionsFromResolvedFile
 ```
 
-Expected: the package suite remains green and the diff check emits no output. The app-target compile is verified by the final locked gate because `MapScreen.swift` is not a Swift package target.
+Expected: the focused app test is green through the mandated wrapper. Removing
+either the initial clamp or the picker maximum makes this test red.
 
-- [ ] **Step 4: Commit the picker integration**
+- [x] **Step 4: Commit the picker integration**
 
 ```bash
 git add ios/App/Sources/Map/MapScreen.swift
@@ -283,15 +296,19 @@ git commit -S -m "fix: bound visit picker to today"
 - Consumes: the exact signed code head from Tasks 1 and 2.
 - Produces: regression teeth, review verdict, cap-3 host-gate evidence, and a coherent issue/ledger record ready for PR handoff.
 
-- [ ] **Step 1: Prove the database guard has teeth**
+- [x] **Step 1: Prove all review-hardening regressions have teeth**
 
-Temporarily remove only the `VisitDateEditPolicy.contains` guard from `AppDatabase.updateVisitDate`, run:
+Mutate one behavior at a time: database rejection, non-finite rejection,
+fractional final-day inclusion, calendar arithmetic across DST, controller
+post-write emission, picker initial clamping, and picker maximum wiring. Run
+each focused regression against its mutation.
 
 ```bash
 swift test --package-path ios --filter InteractionsTests.testUpdateVisitDateRejectsTomorrowWithoutMutatingTheVisit
 ```
 
-Expected: exactly the future-date regression fails because the write succeeds or the expected error is absent. Restore the production source and rerun the focused test green. Confirm `git diff` contains no mutation residue.
+Expected: each intended regression fails. Restore production after every
+mutation, rerun green, and confirm `git diff` contains no mutation residue.
 
 - [ ] **Step 2: Run repository checks**
 

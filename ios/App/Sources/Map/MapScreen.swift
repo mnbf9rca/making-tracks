@@ -5993,7 +5993,7 @@ private struct ListDetailView: View {
     }
 }
 
-private struct TrackVisitDateEditorView: View {
+struct TrackVisitDateEditorView: View {
     let model: MapScreenModel?
     let onChanged: @MainActor () async -> Void
     let onDismiss: @MainActor () -> Void

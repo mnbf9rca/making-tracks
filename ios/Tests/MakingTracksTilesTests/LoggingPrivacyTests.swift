@@ -636,7 +636,7 @@ final class LoggingPrivacyTests: XCTestCase {
         XCTAssertTrue(source.contains("presentVisitEditor(visit)"))
         XCTAssertTrue(source.contains(".allowsHitTesting(selectedVisitForEditing == nil)"))
 
-        guard let editorStart = source.range(of: "private struct TrackVisitDateEditorView: View {"),
+        guard let editorStart = source.range(of: "struct TrackVisitDateEditorView: View {"),
               let editorEnd = source[editorStart.upperBound...].range(of: "\nprivate struct OfflineMapsReleaseGatedView")
         else {
             return XCTFail("Could not isolate TrackVisitDateEditorView")

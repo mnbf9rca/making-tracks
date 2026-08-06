@@ -2826,6 +2826,69 @@ final class AppShellTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(TrackVisitRowDensitySpec.minimumHeight, 96)
     }
 
+    @MainActor
+    func testVisitDateEditorMountsClampedSelectionAndLocalDayMaximum() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Kuala_Lumpur"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 6,
+            hour: 9
+        )))
+        let expectedToday = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 6
+        )))
+        let expectedTomorrow = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 7
+        )))
+        let expectedMaximum = Date(
+            timeIntervalSinceReferenceDate: expectedTomorrow.timeIntervalSinceReferenceDate.nextDown
+        )
+        let futureVisit = TrackVisit(
+            id: 454,
+            placeID: "p_future_editor",
+            visitedAt: try XCTUnwrap(calendar.date(from: DateComponents(
+                year: 2026,
+                month: 8,
+                day: 8,
+                hour: 12
+            ))),
+            verdict: nil,
+            name: "Future fixture",
+            category: "history",
+            tier: 2,
+            lat: 3.14,
+            lon: 101.69
+        )
+        let editor = TrackVisitDateEditorView(
+            model: nil,
+            visit: futureVisit,
+            now: now,
+            calendar: calendar,
+            onChanged: {},
+            onDismiss: {}
+        )
+        let host = UIHostingController(rootView: editor)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+
+        let picker = try XCTUnwrap(firstSubview(of: UIDatePicker.self, in: host.view))
+        XCTAssertEqual(picker.date.timeIntervalSinceReferenceDate, expectedToday.timeIntervalSinceReferenceDate)
+        XCTAssertEqual(
+            picker.maximumDate?.timeIntervalSinceReferenceDate,
+            expectedMaximum.timeIntervalSinceReferenceDate
+        )
+        window.isHidden = true
+    }
+
     func testListMapPinPresentationTracksModeUsesFullStrengthPins() {
         XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: true), .tracks)
         XCTAssertEqual(ListMapPinPresentation.presentation(showVisited: false), .discovery)
@@ -6102,4 +6165,15 @@ private func assertColor(
     XCTAssertEqual(green, expectedGreen, accuracy: 0.001, file: file, line: line)
     XCTAssertEqual(blue, expectedBlue, accuracy: 0.001, file: file, line: line)
     XCTAssertEqual(alpha, 1, accuracy: 0.001, file: file, line: line)
+}
+
+@MainActor
+private func firstSubview<T: UIView>(of type: T.Type, in root: UIView) -> T? {
+    if let match = root as? T { return match }
+    for child in root.subviews {
+        if let match = firstSubview(of: type, in: child) {
+            return match
+        }
+    }
+    return nil
 }

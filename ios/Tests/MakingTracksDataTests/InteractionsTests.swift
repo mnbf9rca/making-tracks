@@ -509,6 +509,34 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(stored.visitOrder, 7)
     }
 
+    func testUpdateVisitDateAcceptsLaterInstantOnSameSuppliedLocalDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Pacific/Kiritimati"))
+        let now = Date(timeIntervalSince1970: 1_775_565_000)
+        let laterLocalToday = Date(timeIntervalSince1970: 1_775_608_200)
+        let original = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 4,
+            day: 7,
+            hour: 21,
+            minute: 15
+        )))
+        let db = try AppDatabase.inMemory(now: { now })
+        let id = try db.recordVisit(ref("p_local_today"), at: original)
+
+        try db.updateVisitDate(
+            id: id,
+            toDayContaining: laterLocalToday,
+            calendar: calendar
+        )
+
+        let stored = try XCTUnwrap(db.visit(id: id))
+        XCTAssertEqual(
+            calendar.dateComponents([.year, .month, .day, .hour, .minute], from: stored.visitedAt),
+            DateComponents(year: 2026, month: 4, day: 8, hour: 21, minute: 15)
+        )
+    }
+
     func testReorderVisitsWithinDayUsesVisitIDsNotPlaceIDs() throws {
         let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
         let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)

@@ -13,11 +13,14 @@ public struct VisitDateEditPolicy: Sendable {
         self.calendar = calendar
         today = calendar.startOfDay(for: now)
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) ?? now
-        latestSelectableDate = calendar.date(byAdding: .second, value: -1, to: tomorrow) ?? now
+        latestSelectableDate = Date(
+            timeIntervalSinceReferenceDate: tomorrow.timeIntervalSinceReferenceDate.nextDown
+        )
     }
 
     public func contains(_ date: Date) -> Bool {
-        calendar.startOfDay(for: date) <= today
+        guard date.timeIntervalSinceReferenceDate.isFinite else { return false }
+        return calendar.startOfDay(for: date) <= today
     }
 
     public func clamped(_ date: Date) -> Date {
