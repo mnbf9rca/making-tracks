@@ -17,6 +17,8 @@
 - Ensure both the normal `ios` base and deliberately unrelated orphan branch commit the resolution so each test reaches its intended gate invariant.
 - Existing behavioral tests are the oracle. Do not assert on production source text or add a test-mode bypass.
 - Require the focused file to pass without caller Git overrides and the full pipeline result to be 695 passed plus the existing live-provider skip.
+- Treat Xcode actions as exact argv tokens, not argv-zero prefixes, while preserving complete ordered logs for flag assertions.
+- Retire the general sequencing test's stale caller-owned-result deletion premise; dedicated success, failure, and explicit-caller lifecycle tests remain the coverage.
 - Publish gate-pending unless historical evidence identifies a standalone test-only release-gate harness change that consumed a simulator gate.
 
 ---
@@ -81,7 +83,53 @@ def _write_package_resolution(repo: Path) -> None:
 
 Call `_write_package_resolution(repo)` after `_write_project(repo, tests_target=tests_target)` in the base setup and again after `_write_project(repo, tests_target=tests_target)` in the orphan branch. The existing `git add .` and commits must own the files; do not add a special staging path or gate bypass.
 
-- [ ] **Step 5: Verify focused GREEN without external overrides**
+- [ ] **Step 5: Expose the remaining masked RED without external overrides**
+
+Run the single test again after the package fixture change.
+
+Expected third RED: the package guard passes and the sequencing test reaches #546's caller-owned artifact
+guard, which refuses the deliberately pre-existing result bundle. Then run the complete focused file.
+Expected inventory: 22 passed and four failed. The other three failures expose the fake/assertions'
+argv-zero assumption after #523 prepended `-disableAutomaticPackageResolution`.
+
+- [ ] **Step 6: Repair action parsing and retire the dead deletion premise**
+
+Change the fake's controlled-failure condition from inspecting `$1` to an exact full-vector token match:
+
+```sh
+case " $* " in
+  *" test-without-building "*)
+    if [ "${MT_RELEASE_GATE_FAIL_TEST:-}" = "1" ]; then exit 65; fi
+    ;;
+esac
+```
+
+Add test helpers:
+
+```python
+_XCODE_ACTIONS = ("build", "build-for-testing", "test-without-building")
+
+def _xcodebuild_invocations(log: Path) -> list[list[str]]:
+    return [
+        line.removeprefix("xcodebuild:").split()
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if line.startswith("xcodebuild:")
+    ]
+
+def _invocations_for_action(log: Path, action: str) -> list[list[str]]:
+    return [args for args in _xcodebuild_invocations(log) if action in args]
+```
+
+Update the full/build/test-mode cases to find exact action tokens with these helpers. Keep all existing
+literal flag, destination, path, and `-only-testing:` assertions. In the full sequencing case, derive the
+action list from `_XCODE_ACTIONS` and assert it equals
+`["build", "build-for-testing", "test-without-building"]`.
+
+Remove only the creation of `stale_result_bundle`, its `stale` sentinel, and
+`assert not stale_result_bundle.exists()` from the general sequencing test. Do not alter the three
+dedicated result-preservation tests.
+
+- [ ] **Step 7: Verify focused GREEN without external overrides**
 
 Run:
 
@@ -91,7 +139,7 @@ Run:
 
 Expected: all 26 release-gate Python tests pass. Confirm the environment has no `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_0`, or `GIT_CONFIG_VALUE_0` requirement.
 
-- [ ] **Step 6: Verify full GREEN and static checks**
+- [ ] **Step 8: Verify full GREEN and static checks**
 
 Run each command separately:
 
@@ -103,7 +151,7 @@ git diff --check
 
 Expected: 695 passed, 1 skipped; agent-law lint and diff check pass.
 
-- [ ] **Step 7: Commit the single fixture repair**
+- [ ] **Step 9: Commit the single fixture repair**
 
 ```bash
 git add pipeline/tests/test_release_gate_script.py
