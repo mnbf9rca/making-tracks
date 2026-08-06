@@ -1831,6 +1831,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
         app.buttons["list-picker.done"].tap()
         XCTAssertFalse(app.buttons["place-card.add-to-list"].exists)
+
+        app.buttons["place-card.more"].tap()
+        let copyIDButton = app.buttons["place-card.copy-id"]
+        XCTAssertTrue(copyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(copyIDButton.label, "Copy ID")
+        copyIDButton.tap()
+
+        let copiedButton = app.buttons["place-card.copy-id"]
+        XCTAssertTrue(copiedButton.exists)
+        XCTAssertEqual(copiedButton.label, "Copied")
+        XCTAssertFalse(copiedButton.isEnabled)
+        XCTAssertTrue(waitForNonExistence(of: copiedButton, timeout: 3))
+        XCTAssertTrue(saveButton.isHittable, "Copy confirmation dismissal must restore the place card")
+
+        app.buttons["place-card.more"].tap()
+        XCTAssertTrue(copyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(copyIDButton.label, "Copy ID")
+        XCTAssertTrue(addToListButton.waitForExistence(timeout: 5))
+        addToListButton.tap()
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        app.buttons["list-picker.done"].tap()
+        XCTAssertTrue(waitForNonExistence(of: copyIDButton, timeout: 3))
+        XCTAssertTrue(saveButton.isHittable, "A subsequent menu action must restore the place card")
         XCTAssertEqual(seenButton.label, "Seen")
         let saveFrameBeforeAttributionScroll = saveButton.frame
         XCTAssertTrue(chips.waitForExistence(timeout: 5))

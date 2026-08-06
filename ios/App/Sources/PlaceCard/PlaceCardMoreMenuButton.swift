@@ -78,6 +78,7 @@ struct PlaceCardMoreMenuContent {
         ) { _ in
             onAddToList()
         }
+        addToList.accessibilityIdentifier = "place-card.add-to-list"
 
         let copyID: UIAction
         switch state {
@@ -97,6 +98,7 @@ struct PlaceCardMoreMenuContent {
                 attributes: [.disabled, .keepsMenuPresented]
             ) { _ in }
         }
+        copyID.accessibilityIdentifier = "place-card.copy-id"
 
         return UIMenu(
             title: "",

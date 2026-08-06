@@ -1707,10 +1707,16 @@ final class AppShellTests: XCTestCase {
             ).count,
             1
         )
+        let moreMenuButtons = descendants(
+            of: PlaceCardMoreMenuButton.self,
+            in: placeCard.header
+        )
+        XCTAssertEqual(moreMenuButtons.count, 1)
+        let moreMenuButton = try XCTUnwrap(moreMenuButtons.first)
         XCTAssertEqual(
             descendants(
                 of: PlaceCardMoreIconGlyph.self,
-                in: placeCard.header
+                in: moreMenuButton.body
             ).count,
             1
         )
@@ -5358,6 +5364,10 @@ final class AppShellTests: XCTestCase {
                 UIAction.Identifier("place-card.copy-id"),
             ]
         )
+        XCTAssertEqual(
+            actions.map(\.accessibilityIdentifier),
+            ["place-card.add-to-list", "place-card.copy-id"]
+        )
         XCTAssertFalse(actions[0].attributes.contains(.keepsMenuPresented))
         XCTAssertTrue(actions[1].attributes.contains(.keepsMenuPresented))
         XCTAssertFalse(actions[1].attributes.contains(.disabled))
@@ -5378,6 +5388,8 @@ final class AppShellTests: XCTestCase {
         XCTAssertEqual(actions.map(\.title), ["Add to list", "Copied"])
         XCTAssertEqual(actions[0].identifier, UIAction.Identifier("place-card.add-to-list"))
         XCTAssertEqual(copied.identifier, UIAction.Identifier("place-card.copy-id"))
+        XCTAssertEqual(actions[0].accessibilityIdentifier, "place-card.add-to-list")
+        XCTAssertEqual(copied.accessibilityIdentifier, "place-card.copy-id")
         XCTAssertTrue(copied.attributes.contains(.disabled))
         XCTAssertTrue(copied.attributes.contains(.keepsMenuPresented))
         XCTAssertTrue(copied.image?.isEqual(UIImage(systemName: "checkmark")) == true)
