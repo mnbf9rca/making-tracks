@@ -7,10 +7,16 @@ jobs:
     name: "main accepts only develop/ios"
     runs-on: ubuntu-latest
     steps:
-      - name: Verify head branch
+      - name: Verify head source
         env:
           HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
         run: |
+          if [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then
+            echo "BLOCKED: promotion source repository must match $BASE_REPOSITORY (got: $HEAD_REPOSITORY)"
+            exit 1
+          fi
           case "$HEAD_REF" in
             develop|ios) echo "OK: promotion from $HEAD_REF" ;;
             *) echo "BLOCKED: main only accepts promotions from develop or ios (got: $HEAD_REF)"; exit 1 ;;
