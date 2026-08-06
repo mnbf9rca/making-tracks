@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import plistlib
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
@@ -48,6 +49,36 @@ class ArchiveFixture:
     app_binary: Path
     dsym_binary: Path
     commands: FakeArchiveCommands
+
+
+@dataclass
+class FakeDittoCommands:
+    package_bytes: bytes = b"deterministic-xcarchive-zip"
+    fail_at: str | None = None
+
+    def __post_init__(self) -> None:
+        self.calls: list[tuple[str, ...]] = []
+
+    def run(self, args: Sequence[str]) -> str:
+        call = tuple(args)
+        self.calls.append(call)
+        if len(call) == 3 and call[0] == "ditto":
+            if self.fail_at == "copy":
+                raise RuntimeError("ditto copy failed")
+            shutil.copytree(Path(call[1]), Path(call[2]))
+            return ""
+        if len(call) == 7 and call[:5] == (
+            "ditto",
+            "-c",
+            "-k",
+            "--sequesterRsrc",
+            "--keepParent",
+        ):
+            if self.fail_at == "package":
+                raise RuntimeError("ditto package failed")
+            Path(call[6]).write_bytes(self.package_bytes)
+            return ""
+        raise AssertionError(f"unexpected command: {call!r}")
 
 
 def make_archive(
