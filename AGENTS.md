@@ -156,13 +156,25 @@ Derived data and result bundles are the biggest disk producers on this shared ho
    canonically resolves under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's per-user temporary `.../T/`
    tree is refused because automatic cleaners can remove it during a gate. Per-run paths accumulate
    without bound.
-2. **Delete successful result bundles after extracting counts.** A failed full bundle is retained only on
-   explicit planner direction, only as a bounded transient holding under
-   `$HOME/Library/Caches/making-tracks-gates/evidence/<owning-issue>/`, and only when its file count,
-   reproducible digest, named cleanup trigger and cleanup owner are recorded. Copy its small failure
-   export to the non-purgeable permanent root
-   `$HOME/Library/Application Support/making-tracks-gates/evidence/<owning-issue>/`. After the trigger,
-   the owner deletes the full bundle; the permanent export, digest and file count remain. Never leave an
+2. **Every result bundle follows its owner's explicit lifecycle; never leave an unowned bundle behind.**
+   The bounded evidence-preserving lifecycles are:
+   - A gate-owned local run keeps the default run and result artifacts it creates in one unique,
+     simulator-scoped directory. Only completion of every phase marks it successful. A later successful
+     `full` gate for that simulator, with no caller-supplied run, result, test-filter or `.xctestrun`
+     override, may remove an owned success only when that success proof is strictly older than `86400`
+     seconds. The gate never deletes failed or interrupted unmarked runs. A caller-named artifact remains
+     caller-owned. These `/private/tmp` runs are purgeable transient evidence, not durable storage; the
+     exact ownership, marker and pruning contract lives in the `ios`
+     branch's `docs/ios-gate-ledger.md` → *Local result-artifact retention*.
+   - CI owns its explicitly named result bundle and follows the workflow's replacement, upload and
+     retention lifecycle; it is never enrolled in local gate-owned cleanup.
+   - A failed full bundle is retained only on explicit planner direction, only as a bounded transient
+     holding under `$HOME/Library/Caches/making-tracks-gates/evidence/<owning-issue>/`, and only when its
+     file count, reproducible digest, named cleanup trigger and cleanup owner are recorded. Copy its small
+     failure export to the non-purgeable permanent root
+     `$HOME/Library/Application Support/making-tracks-gates/evidence/<owning-issue>/`. After the trigger,
+     the owner deletes the full bundle; the permanent export, digest and file count remain.
+   Outside those lifecycles, delete a successful result bundle after extracting counts and never leave an
    `.xcresult` in its temporary run directory between runs.
 
 The successful-result cleanup idiom remains in
@@ -199,9 +211,9 @@ Before opening any PR, run this sequence top to bottom. Each step is stated in f
 4. **Release-configuration build** for iOS app-target work, under the fleet lock (Review gates, point 3).
 5. **Zero new warnings** (Review gates, point 4).
 6. **Stale-base diff review.** `git diff --stat origin/<target>..HEAD` (two-dot) must show **only your additions**. Deletions or edits to other agents' merged work mean your base is stale and you are about to clobber it — stop and re-ground (step 1).
-7. **Artifact cleanup** (Disk hygiene). No successful or temporary-run `.xcresult` bundles remain; a
-   failed bundle may remain only under the bounded evidence exception in Disk hygiene, point 2. Keep one
-   reusable DerivedData directory per seat.
+7. **Artifact cleanup** (Disk hygiene). No successful or temporary-run `.xcresult` bundles remain except
+   those enrolled in the gate-owned local lifecycle in Disk hygiene, point 2; a failed bundle may remain
+   only under that point's bounded evidence exception. Keep one reusable DerivedData directory per seat.
 8. **Push before requesting review** (Workflow). A review request against unpushed work is a no-op. Confirm the remote branch exists.
 9. **Open the PR** into `<target>` with labels applied immediately — `sourcery-review` (always) + the **track** label + the **wp** label — and cross-link the issue(s) it delivers in the body (Review gates, point 5; Reporting, issues and labels).
 10. **Process every review comment** (Review gates, point 5). Nothing merges with an unresolved thread.
