@@ -3,6 +3,7 @@ from __future__ import annotations
 import plistlib
 import shutil
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Sequence
 
@@ -79,6 +80,88 @@ class FakeDittoCommands:
             Path(call[6]).write_bytes(self.package_bytes)
             return ""
         raise AssertionError(f"unexpected command: {call!r}")
+
+
+class FakeS3Error(Exception):
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.response = {"Error": {"Code": code}}
+
+
+@dataclass
+class InMemoryS3:
+    page_size: int = 1_000
+
+    def __post_init__(self) -> None:
+        self.objects: dict[tuple[str, str], bytes] = {}
+        self.calls: list[tuple[str, str, str]] = []
+        self.corrupt_get_key: str | None = None
+        self.read_failure_key: str | None = None
+        self.precondition_races: dict[str, bytes] = {}
+
+    def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
+        self.calls.append(("put", Bucket, Key))
+        if IfNoneMatch != "*":
+            raise AssertionError("immutable writes require IfNoneMatch='*'")
+        if Key in self.precondition_races:
+            self.objects[(Bucket, Key)] = self.precondition_races.pop(Key)
+            raise FakeS3Error("PreconditionFailed")
+        if (Bucket, Key) in self.objects:
+            raise FakeS3Error("PreconditionFailed")
+        data = Body.read() if hasattr(Body, "read") else Body
+        if not isinstance(data, bytes):
+            raise AssertionError("put body must resolve to bytes")
+        self.objects[(Bucket, Key)] = data
+        return {"ETag": '"not-a-content-digest"'}
+
+    def get_object(self, *, Bucket, Key):
+        self.calls.append(("get", Bucket, Key))
+        try:
+            data = self.objects[(Bucket, Key)]
+        except KeyError as exc:
+            raise FakeS3Error("NoSuchKey") from exc
+        if Key == self.corrupt_get_key:
+            data = data + b"corrupt"
+        if Key == self.read_failure_key:
+            class FailingBody:
+                def read(self, _size: int) -> bytes:
+                    raise RuntimeError("R2_SECRET_SENTINEL")
+
+            return {"Body": FailingBody(), "ContentLength": len(data)}
+        return {"Body": BytesIO(data), "ContentLength": len(data)}
+
+    def list_objects_v2(
+        self,
+        *,
+        Bucket,
+        Prefix,
+        Delimiter,
+        ContinuationToken=None,
+    ):
+        self.calls.append(("list", Bucket, Prefix))
+        if Delimiter != "/":
+            raise AssertionError("archive discovery must use Delimiter='/'")
+        prefixes = sorted(
+            {
+                Prefix + remainder.split("/", 1)[0] + "/"
+                for bucket, key in self.objects
+                if bucket == Bucket
+                and key.startswith(Prefix)
+                and (remainder := key[len(Prefix) :])
+                and "/" in remainder
+            }
+        )
+        start = int(ContinuationToken or "0")
+        page = prefixes[start : start + self.page_size]
+        next_start = start + len(page)
+        truncated = next_start < len(prefixes)
+        result = {
+            "CommonPrefixes": [{"Prefix": value} for value in page],
+            "IsTruncated": truncated,
+        }
+        if truncated:
+            result["NextContinuationToken"] = str(next_start)
+        return result
 
 
 def make_archive(
