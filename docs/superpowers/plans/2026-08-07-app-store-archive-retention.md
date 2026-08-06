@@ -20,6 +20,7 @@
 - The operator uploads the retained Application Support `.xcarchive`, not the original Organizer path. Local deletion is documented only after App Store Connect acceptance and a successful fresh retrieval; production code exposes no delete command.
 - R2 credentials remain environment-only behind `op run --env-file=.env.tpl`. CLI and exception output name missing variable names but never credential values.
 - Follow strict RED → GREEN → REFACTOR. Every test invokes production functions or the production CLI; no test reads production source text as its oracle.
+- Final publication requires rebasing onto an `ios` branch that contains #633. Until then, slice checkpoints use their focused suites and name the 26 full-suite failures as the pre-#633 release-gate fixture's inherited-signing defect. After that rebase, the full pipeline bar is zero failures with only the live-provider skip at the actual collected count; do not reuse a memorized count.
 - Before final review, mutate each critical production guard one at a time, prove its named test fails for the intended reason, restore it, prove GREEN, and record the command/result in `docs/superpowers/reports/2026-08-07-app-store-archive-mutation-teeth.md`.
 - Every repository mutation is a bare single command and is verified separately. Commits are signed and single-purpose.
 
