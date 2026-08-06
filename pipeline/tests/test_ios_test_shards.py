@@ -401,9 +401,22 @@ def test_ios_gate_runs_ax_wait_validation_and_focused_pytest():
 
     assert job_match is not None
     ios_gate_job = job_match.group("body")
+    pytest_step_match = re.search(
+        r"^      - name: Test iOS shard tooling\n(?P<body>.*?)(?=^      - |\Z)",
+        ios_gate_job,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+
+    assert pytest_step_match is not None
+    pytest_step = pytest_step_match.group("body")
     assert "  pull_request:\n" in workflow
     assert "  workflow_dispatch:\n" in workflow
     assert "\n    if:" not in ios_gate_job
+    assert "\n        if:" not in pytest_step
+    assert (
+        "run: uv run --package making-tracks-pipeline --extra dev pytest "
+        "pipeline/tests/test_ios_test_shards.py"
+    ) in pytest_step
     assert "python3 scripts/ios-test-shards.py validate-ax-waits" in workflow
     assert '      - "pipeline/tests/test_ios_test_shards.py"' in workflow
     assert """      - uses: astral-sh/setup-uv@v9.0.0
