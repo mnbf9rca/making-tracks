@@ -203,22 +203,27 @@ Absent condition 3, a harness timeout is a real red. Infra classifications are b
 
 Each entry records gate duration and the runner benchmark score (`runner_benchmark_ops_per_sec`) so classifications can be checked against measured runner performance rather than duration alone. Use `not measured` only for legacy runs whose workflow did not emit the runner benchmark.
 
-## Count Rules
+## Retired CI-Authority Count Rules
 
-1. A run counts toward the flip only when it is green on the full UI-shard fan-in — the
-   `workflow_dispatch` meaning of `ios-release-gate` (see Check Name Mapping) — on a tree that matches a
-   green local gate.
-2. Flip criterion: 2 consecutive counting greens. Rob pre-authorized the flip at that point (2026-07-22):
-   make `ios-release-gate` a required check, and amend the law so CI is the merge authority with local
-   full gates optional.
-3. A real red resets the count to zero. An infra-classified red neither counts nor resets, and consumes
-   the infra budget above.
-4. Status: the flip is parked pending the runner-capacity decision (self-hosted runner on real hardware).
-   Entries continue to be recorded while parked.
+The historical experiment counted a run only when the full `workflow_dispatch` UI-shard fan-in was green
+on a tree matching a green host gate. A real red reset the count; an infra-classified red neither counted
+nor reset and consumed the classification budget above. Its proposed flip-at-2 criterion, CI-authority
+change, optional-host-gate outcome, and self-hosted-runner path were retired without activation by Rob's
+PR #403 ruling. These entries remain measurement history, not a standing authorization or merge rule.
+
+## Suite Inventory
+
+At `ios` head `79a8a19c2974e5f915796a4dc1449ee02e401f32` on 2026-08-06, the Xcode `MakingTracks`
+scheme inventory was 372 tests: 251 app/unit and 121 UI. The distinct SwiftPM inventory executed by
+`swift test` was 518 tests. `release-gate.sh` exercises the Xcode inventory only. These are grounded
+snapshots, not timeless constants; refresh this section when either suite changes, and always report the
+suite name with its count. Reproduce the Xcode snapshot from the per-suite summaries emitted by
+`./scripts/sim-lock.sh --seat codexN ./scripts/release-gate.sh`; reproduce the SwiftPM snapshot with
+`swift test` from `ios/`.
 
 ## Check Name Mapping
 
-After the sharded gate change, `ios-release-gate` has two trigger-dependent meanings. On `pull_request`, it is the per-PR build+unit fan-in and the UI shards are expected to be skipped. On `workflow_dispatch`, it is the full UI-shard fan-in and also validates executed UI coverage against the built test enumeration. The parked flip plan must pin the meaning, not just the check name.
+After the sharded gate change, `ios-release-gate` has two trigger-dependent meanings. On `pull_request`, it is the per-PR build+unit fan-in and the UI shards are expected to be skipped. On `workflow_dispatch`, it is the full UI-shard fan-in and also validates executed UI coverage against the built test enumeration. Any CI evidence claim must pin this trigger-dependent meaning, not just the check name.
 
 ## Entries
 

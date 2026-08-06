@@ -42,6 +42,58 @@ The app-specific facts an agent needs are stated in `develop`'s file, in these s
   files live under `$HOME/Library/Application Support/making-tracks-gates/locks`, outside automatic
   temporary and cache cleanup jurisdictions; never delete, replace, or relocate one as recovery.
 
+## Gate authority for iOS changes
+
+1. **The host gate plus merger verification is merge authority.** Anything under `ios/` merges only with
+   a green host gate on the exact tree and suite being relied on, followed by the merger's live-head and
+   evidence verification. CI is an advisory signal: neither a green CI run nor a pasted count replaces
+   the authoritative host evidence.
+
+2. **CI remains mandatory evidence to inspect, not authority to substitute.** Its build, test, artifact,
+   and environment results can reveal defects the host did not. A green signal is useful evidence; a red
+   signal is a finding. Neither changes which gate authorizes the merge.
+
+3. **The host gate stays on the merge path and the lock discipline is unchanged.** Run it as
+   `./scripts/sim-lock.sh --seat codexN ./scripts/release-gate.sh`. Waiting for its assigned simulator and
+   global slot is part of taking the gate, never a reason to replace it with CI. `scripts/sim-lock.sh`
+   remains the only simulator entry point, and `--status` remains the only valid availability check.
+
+4. **When CI and host evidence disagree, the disagreement is a finding.** CI-red/host-green means the
+   host environment did not expose the CI failure; CI-green/host-red means CI did not expose the host
+   failure. Investigate the evidence before merging. Neither result erases the other or creates an
+   authority conflict.
+
+5. **Infra flake is bounded.** Assertion and build failures are real. Runner setup outages and simulator
+   boot failures may be rerun once, then triaged with the retained artifact bundle, failure screenshot,
+   and environment receipt. "Rerun until green" is not a policy.
+
+6. **A gate result is scoped to the tree content and suite inventory it exercised.** A tree or suite
+   change invalidates the result; a commit-identity-only change carries evidence only through point 7's
+   verified exception. This repo has distinct Xcode-scheme and SwiftPM inventories, and
+   `release-gate.sh` runs only the Xcode scheme. Ground current counts in `docs/ios-gate-ledger.md` →
+   *Suite Inventory*, then identify the trigger-dependent check meaning in *Check Name Mapping*.
+
+7. **Signing is ruleset-required** on protected branches. A signature-only amend that leaves the tree
+   byte-identical carries the prior gate's evidence, but verify the tree identity instead of assuming the
+   amend changed nothing else.
+
+8. **CI and host selectors are explicit and fail closed.** CI pins its simulator device type and runtime;
+   the host wrapper resolves the assigned seat's exact UUID from the ledger. Neither silently substitutes
+   whatever happens to be available. A fallback selector makes results non-deterministic and prevents
+   useful environment comparison when signals disagree.
+
+9. **The default unfiltered full gate proves its own provenance.** This means
+   `MT_RELEASE_GATE_MODE=full` with both `MT_RELEASE_GATE_ONLY_TESTING_FILE` and
+   `MT_RELEASE_GATE_XCTESTRUN_FILE` unset. The `project.yml` post-build scripts stamp the checkout commit
+   into the app and UI-test bundle; the `testCreditsStayGroupedAtAccessibilityTextSize` method in
+   `MakingTracksCoreLoopUITests` asserts that the running app reports the bundle's
+   commit. An only-testing run omitting that identifier does not exercise the assertion, and even one
+   including it does not cover the full suite. A caller-supplied xctestrun does not prove that the current
+   checkout built the tested pair. Neither filtered form can stand in for the authoritative full gate.
+
+Decision provenance is PR #403. The run history, count semantics, and trigger-dependent check mapping
+that informed the ruling live in `docs/ios-gate-ledger.md`.
+
 ## CI on this branch
 
 `.github/workflows/ios-gate.yml` runs the build and unit tests on every PR; the UI shards run only on

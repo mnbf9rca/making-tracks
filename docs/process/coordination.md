@@ -110,9 +110,13 @@ When the spec doesn't settle a judgment call:
 Durable facts the fleet operates under (moved here from planner's session memory so a restart preserves them).
 
 1. **Signing** (ruleset, verified 2026-07-23): long-lived branches require signed commits. Agents sign via the 1Password socket, biometric on first use per session; tree-preserving re-sign amends carry gate evidence forward.
-2. **Pre-auth "flip at 2"** (Rob, 2026-07-22): at 2 consecutive counting greens, planner executes the ruleset change (`ios-release-gate` required) + the CI-merge-authority amendment without further ask. **Currently PARKED** pending the self-hosted-runner decision (new MacBook ~2026-07-29). Count state lives in `docs/ios-gate-ledger.md`.
+2. **CI flip decision:** the flip-at-2 pre-authorization and the self-hosted-runner path are retired. The
+   governing authority rule lives in `AGENTS.md` → *Gate authority for iOS changes*. Decision provenance
+   is PR #403; count history and trigger semantics live in `docs/ios-gate-ledger.md`.
 3. **Standing goal** (Rob, 2026-07-20): drain epic #335 and its sub-issues to the MVP bar before new design threads. Per spec §9, **Phase 1 begins after this completes**.
-4. **CI-gate amendment candidates** pending Rob's ruling: build-hash assertion as gate provenance; `Package.resolved` lint (swift test rewrites the MapLibre pin); "pin to the environment you do not control".
+4. **CI-gate amendment candidates:** resolved. The governing authority, selector, and provenance rules
+   live in `AGENTS.md` → *Gate authority for iOS changes*; committed dependency-resolution verification
+   landed separately in #627.
 5. **Rob's device artifacts** sync to `.mt-data/screenshots/` and `.mt-data/diagnostics/` in the repo root — check there before asking Rob for files.
 
 ## Current phase
