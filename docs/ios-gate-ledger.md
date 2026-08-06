@@ -32,8 +32,35 @@ destination and explicit non-temporary DerivedData override through the Actions-
 | `codex4` | `$HOME/Library/Caches/making-tracks-gates/codex4` |
 
 DerivedData never belongs under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's per-user temporary
-`/private/var/folders/*/T/` trees; #612 guards both entry points before Xcode runs. Result bundles remain
-temporary and follow the inherited cleanup rule.
+`/private/var/folders/*/T/` trees; #612 guards both entry points before Xcode runs.
+
+### Local result-artifact retention
+
+Default local `full`, `test`, and `enumerate` runs place their artifacts in unique owned directories below
+`/private/tmp/release-gate-<validated simulator UUID>/runs/`. The gate writes an ownership marker before
+Xcode and a success marker only after every requested phase succeeds. A later successful, fully default
+`full` gate for the same simulator may remove a marked owned success only when its success marker is
+strictly older than 24 hours (`age > 86400` seconds). The cleanup examines canonical direct children with
+exact run names and exact ownership identities; it does not scan another simulator root or use a wildcard
+as a deletion target.
+
+Failed and interrupted runs have no success marker and are never deleted by the gate. Local paths named
+through `MT_RELEASE_GATE_RUN_DIR`, `MT_RELEASE_GATE_RESULT_BUNDLE`, or another artifact override are
+caller-owned and remain outside automatic cleanup. GitHub Actions keeps its existing explicit artifact
+replacement and upload lifecycle.
+
+Failure evidence is temporary even though the gate preserves it. The macOS `com.apple.tmp_cleaner`
+service can remove files beneath `/private/tmp` after their access, modification, and change times are all
+older than roughly three days. Operators therefore extract or copy needed evidence within that OS window
+to `$HOME/Library/Application Support/making-tracks-gates/evidence/<issue>`; that deadline is an operator
+SLA, not gate behavior. After extraction, manually delete only the exact released failure directory.
+`~/Library/Caches` is suitable only for bounded transient holdings with a named cleanup trigger, not
+durable evidence.
+
+The 24-hour success window bounds accumulation from repeated result bundles recently measured at roughly
+168–178 MiB each. Two old-machine ENOSPC incidents required manual Phase 1 sweeps; the durable incident
+record quantifies one as roughly 35 GB of DerivedData and result-bundle litter filling the shared host.
+The second incident has no retained byte measurement, so this ledger does not invent one.
 
 Stable coordination files live under
 `$HOME/Library/Application Support/making-tracks-gates/locks`, outside automatic temporary and cache
