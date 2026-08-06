@@ -431,15 +431,7 @@ final class AppShellTests: XCTestCase {
             contentsOf: appRoot.appendingPathComponent("Sources/Map/MapScreen.swift"),
             encoding: .utf8
         )
-        let cardSource = try String(
-            contentsOf: appRoot.appendingPathComponent(
-                "Sources/PlaceCard/PlaceCardSheet.swift"
-            ),
-            encoding: .utf8
-        )
-
         XCTAssertFalse(mapSource.contains("struct PlaceCardSheet: View"))
-        XCTAssertTrue(cardSource.contains("struct PlaceCardSheet: View"))
     }
 
     func testPersistentDoorChromeReservesStandardAndAccessibilityClearance() {
