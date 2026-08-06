@@ -20,6 +20,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT="ios/App/MakingTracks.xcodeproj"
 PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
+PACKAGE_RESOLVED="ios/Package.resolved"
+PACKAGE_RESOLVED_DIGEST=""
+PACKAGE_RESOLUTION_ARGS=(-onlyUsePackageVersionsFromResolvedFile)
 if [ "${GITHUB_ACTIONS:-}" = "true" ] &&
    [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ]; then
   DESTINATION_VARIABLE="MT_RELEASE_GATE_CI_DESTINATION"
@@ -82,6 +85,54 @@ SUCCESS_MARKER=""
 refuse() {
   echo "release-gate: refused: $1" >&2
   exit 1
+}
+
+package_resolution_digest() {
+  shasum -a 256 "$PACKAGE_RESOLVED" | awk '{print $1}'
+}
+
+package_resolution_head_digest() {
+  git show "HEAD:$PACKAGE_RESOLVED" | shasum -a 256 | awk '{print $1}'
+}
+
+package_resolution_matches_head() {
+  local current_digest
+  local head_digest
+
+  [ -f "$PACKAGE_RESOLVED" ] &&
+    [ ! -L "$PACKAGE_RESOLVED" ] &&
+    git ls-files --error-unmatch -- "$PACKAGE_RESOLVED" >/dev/null 2>&1 &&
+    git diff --cached --quiet HEAD -- "$PACKAGE_RESOLVED" || return 1
+  head_digest="$(package_resolution_head_digest)" || return 1
+  current_digest="$(package_resolution_digest)" || return 1
+  [ -n "$head_digest" ] && [ "$current_digest" = "$head_digest" ]
+}
+
+capture_committed_package_resolution() {
+  package_resolution_matches_head ||
+    refuse "$PACKAGE_RESOLVED must be a regular tracked file matching HEAD; commit the intentional update, or restore it from HEAD"
+  PACKAGE_RESOLVED_DIGEST="$(package_resolution_digest)" ||
+    refuse "could not hash committed package resolution: $PACKAGE_RESOLVED"
+  [ -n "$PACKAGE_RESOLVED_DIGEST" ] ||
+    refuse "could not hash committed package resolution: $PACKAGE_RESOLVED"
+  echo "release-gate: package resolution: $PACKAGE_RESOLVED sha256=$PACKAGE_RESOLVED_DIGEST" >&2
+}
+
+verify_committed_package_resolution() {
+  local current_digest
+
+  if ! package_resolution_matches_head; then
+    echo "release-gate: dependency resolution drift: Xcode changed $PACKAGE_RESOLVED; refusing gate result" >&2
+    return 1
+  fi
+  current_digest="$(package_resolution_digest)" || {
+    echo "release-gate: dependency resolution drift: could not hash $PACKAGE_RESOLVED after Xcode" >&2
+    return 1
+  }
+  if [ "$current_digest" != "$PACKAGE_RESOLVED_DIGEST" ]; then
+    echo "release-gate: dependency resolution drift: $PACKAGE_RESOLVED sha256=$current_digest expected=$PACKAGE_RESOLVED_DIGEST" >&2
+    return 1
+  fi
 }
 
 mtime_seconds() {
@@ -435,21 +486,32 @@ xcodebuild_log_name() {
 
 run_xcodebuild() {
   local label
+  local pipeline_statuses
   local raw_log
+  local xcode_status
 
   label="$1"
   shift
 
   if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
-    xcodebuild "$@"
-    return
+    xcodebuild "${PACKAGE_RESOLUTION_ARGS[@]}" "$@"
+    xcode_status=$?
+  else
+    command -v xcbeautify >/dev/null 2>&1 ||
+      refuse "xcbeautify must be installed for GitHub Actions release-gate logs"
+
+    raw_log="$RUN_DIR/$(xcodebuild_log_name "$label")"
+    xcodebuild "${PACKAGE_RESOLUTION_ARGS[@]}" "$@" 2>&1 | tee "$raw_log" | xcbeautify
+    pipeline_statuses=("${PIPESTATUS[@]}")
+    xcode_status="${pipeline_statuses[0]}"
+    if [ "$xcode_status" -eq 0 ]; then
+      [ "${pipeline_statuses[1]}" -eq 0 ] || xcode_status="${pipeline_statuses[1]}"
+      [ "${pipeline_statuses[2]}" -eq 0 ] || xcode_status="${pipeline_statuses[2]}"
+    fi
   fi
 
-  command -v xcbeautify >/dev/null 2>&1 ||
-    refuse "xcbeautify must be installed for GitHub Actions release-gate logs"
-
-  raw_log="$RUN_DIR/$(xcodebuild_log_name "$label")"
-  xcodebuild "$@" 2>&1 | tee "$raw_log" | xcbeautify
+  verify_committed_package_resolution || return 1
+  return "$xcode_status"
 }
 
 populate_only_testing_args() {
@@ -509,6 +571,8 @@ git merge-base --is-ancestor origin/ios HEAD ||
 
 lock_is_satisfied ||
   refuse "must be run through scripts/sim-lock.sh --seat <seat> (which holds the simulator lock)"
+
+capture_committed_package_resolution
 
 if [ -z "$DERIVED_DATA" ]; then
   case "${MT_SIM_LOCK_SEAT:-}" in
