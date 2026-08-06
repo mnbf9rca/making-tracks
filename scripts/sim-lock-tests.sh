@@ -2326,8 +2326,19 @@ check_package_resolution_preflight \
 "$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" init -q
 "$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" config user.name "Release Gate Fixture"
 "$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" config user.email "release-gate-fixture@example.invalid"
+RELEASE_FIXTURE_HOOKS="$TMP/release-fixture-hooks"
+mkdir -p "$RELEASE_FIXTURE_HOOKS"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 88' >"$RELEASE_FIXTURE_HOOKS/pre-commit"
+chmod +x "$RELEASE_FIXTURE_HOOKS/pre-commit"
+"$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" config commit.gpgsign true
+"$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" config core.hooksPath "$RELEASE_FIXTURE_HOOKS"
+"$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" config gpg.format ssh
+"$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" config user.signingkey "$TMP/missing-signing-key"
 "$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" add ios/Package.resolved ios/App/MakingTracks.xcodeproj/project.pbxproj
-"$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" commit -q -m fixture
+"$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" \
+  -c commit.gpgsign=false \
+  -c core.hooksPath=/dev/null \
+  commit -q -m fixture
 "$REAL_GIT" -C "$RELEASE_FIXTURE_REPO" update-index --skip-worktree ios/Package.resolved
 printf '%s\n' hidden-mutation >>"$RELEASE_FIXTURE_RESOLVED"
 check_package_resolution_preflight \

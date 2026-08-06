@@ -31,7 +31,7 @@
 - Consumes: `refuse(message)`, `phase(label, command...)`, `run_xcodebuild(label, args...)`, and the existing fake Git/Xcode seam.
 - Produces: `capture_committed_package_resolution()`, `verify_committed_package_resolution()`, and immutable `PACKAGE_RESOLVED_DIGEST`.
 
-- [ ] **Step 1: Add a disposable release-gate repository fixture**
+- [x] **Step 1: Add a disposable release-gate repository fixture**
 
 Before the release-gate host tests, create and reset:
 
@@ -63,7 +63,7 @@ fixtures through `RELEASE_FIXTURE_REPO`. Add `XCRUN_LOG="$TMP/xcrun.log"`,
 make fake `xcrun` append its arguments when `MT_TEST_XCRUN_LOG` is set, and
 export that path from the fixture runner.
 
-- [ ] **Step 2: Write six failing cases and one status-preservation characterization**
+- [x] **Step 2: Write six failing cases and one status-preservation characterization**
 
 Add these exact cases:
 
@@ -86,7 +86,7 @@ return `73` and requires both gate exit `73` and
 `release build status=73`; this last case characterizes behavior the existing
 `phase` wrapper already provides and protects it through the refactor.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run `bash scripts/sim-lock-tests.sh`.
 
@@ -96,7 +96,7 @@ remain green; the five preflight cases and successful-mutator case fail, for
 If sandboxing blocks cache or process-inspection paths, rerun the identical
 command with host approval.
 
-- [ ] **Step 4: Implement the snapshot and invariant**
+- [x] **Step 4: Implement the snapshot and invariant**
 
 Add:
 
@@ -108,12 +108,21 @@ package_resolution_digest() {
   shasum -a 256 "$PACKAGE_RESOLVED" | awk '{print $1}'
 }
 
+package_resolution_head_digest() {
+  git show "HEAD:$PACKAGE_RESOLVED" | shasum -a 256 | awk '{print $1}'
+}
+
 package_resolution_matches_head() {
+  local current_digest
+  local head_digest
+
   [ -f "$PACKAGE_RESOLVED" ] &&
     [ ! -L "$PACKAGE_RESOLVED" ] &&
     git ls-files --error-unmatch -- "$PACKAGE_RESOLVED" >/dev/null 2>&1 &&
-    git diff --quiet -- "$PACKAGE_RESOLVED" &&
-    git diff --cached --quiet HEAD -- "$PACKAGE_RESOLVED"
+    git diff --cached --quiet HEAD -- "$PACKAGE_RESOLVED" || return 1
+  head_digest="$(package_resolution_head_digest)" || return 1
+  current_digest="$(package_resolution_digest)" || return 1
+  [ -n "$head_digest" ] && [ "$current_digest" = "$head_digest" ]
 }
 
 capture_committed_package_resolution() {
@@ -157,7 +166,7 @@ return "$xcode_status"
 The surrounding `phase` already disables `errexit` and `pipefail` preserves the
 CI pipeline status.
 
-- [ ] **Step 5: Run GREEN and prove post-phase teeth**
+- [x] **Step 5: Run GREEN and prove post-phase teeth**
 
 Run `bash scripts/sim-lock-tests.sh`.
 
@@ -167,7 +176,7 @@ Use `apply_patch` to temporarily replace the post-phase verification call with
 `:`. Rerun the harness; exactly the successful-mutator case must fail. Restore
 the call with `apply_patch` and rerun to `133 passed, 0 failed`.
 
-- [ ] **Step 6: Commit and publish Task 1**
+- [x] **Step 6: Commit and publish Task 1**
 
 ```bash
 git add scripts/release-gate.sh scripts/sim-lock-tests.sh
@@ -189,7 +198,7 @@ Run each mutation as a separate command and verify the signed remote head.
 - Consumes: Task 1's `run_xcodebuild` boundary and fake-Xcode argument log.
 - Produces: `PACKAGE_RESOLUTION_ARGS`, the single policy source for all four Xcode invocation shapes.
 
-- [ ] **Step 1: Write two failing argument invariants**
+- [x] **Step 1: Write two failing argument invariants**
 
 Add:
 
@@ -209,13 +218,13 @@ all_xcode_calls_use_committed_resolution() {
 One successful `full` fixture requires exactly three pinned calls. One
 successful `enumerate` fixture requires exactly one pinned call.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run `bash scripts/sim-lock-tests.sh`.
 
 Expected: Task 1 remains green and exactly the two argument cases fail.
 
-- [ ] **Step 3: Centralize the Xcode argument**
+- [x] **Step 3: Centralize the Xcode argument**
 
 Add:
 
@@ -232,15 +241,16 @@ xcodebuild "${PACKAGE_RESOLUTION_ARGS[@]}" "$@"
 The CI branch retains its existing `tee`/`xcbeautify` pipeline. Do not duplicate
 the flag at the Release, build-for-testing, test, or enumerate call sites.
 
-- [ ] **Step 4: Run GREEN and prove argument teeth**
+- [x] **Step 4: Run GREEN and prove argument teeth**
 
 Run `bash scripts/sim-lock-tests.sh`. Expected: `135 passed, 0 failed`.
 
-Use `apply_patch` to temporarily change `PACKAGE_RESOLUTION_ARGS` to an empty
-array. Rerun the harness; exactly both argument invariants must fail. Restore
-the flag and rerun to `135 passed, 0 failed`.
+Use `apply_patch` to temporarily replace the flag with a harmless nonempty
+argument; an empty array is not compatible with the system Bash 3.2 plus
+`set -u`. Rerun the harness; exactly both argument invariants must fail.
+Restore the flag and rerun to `135 passed, 0 failed`.
 
-- [ ] **Step 5: Run static verification**
+- [x] **Step 5: Run static verification**
 
 ```bash
 bash -n scripts/release-gate.sh scripts/sim-lock-tests.sh
@@ -253,7 +263,7 @@ git status --short
 Expected: all succeed, only intended #523 files are modified, and
 `ios/Package.resolved` is absent from status.
 
-- [ ] **Step 6: Commit and publish Task 2**
+- [x] **Step 6: Commit and publish Task 2**
 
 ```bash
 git add scripts/release-gate.sh scripts/sim-lock-tests.sh
@@ -262,6 +272,42 @@ git push origin HEAD
 ```
 
 Run each mutation separately and verify the signed remote head.
+
+---
+
+### Review-Hardening Amendment
+
+The first exact-head adversarial pass raised 33 candidates across three
+independent critics. Cross-examination reduced those to five unique survivors:
+direct worktree-byte comparison with the `HEAD` blob; strict fake-Git argument
+fidelity; the failing-Xcode-plus-drift cross-product; exact-one flag
+cardinality; and CI preservation of Xcode's status when a logging stage also
+fails.
+
+- [x] Replace the unstaged `git diff` trust boundary with a SHA-256 comparison
+  between the regular worktree file and `git show HEAD:ios/Package.resolved`.
+  Retain the cached-index comparison so staged drift also refuses.
+- [x] Make fake Git accept only the exact commands and path used in production,
+  and add a real temporary repository whose dirty lockfile is hidden behind
+  `skip-worktree`. Its fixture commit explicitly disables signing and hooks so
+  global developer configuration cannot prompt or fail the controller.
+- [x] Add `release gate lets resolution drift override a failing Xcode phase`.
+  It makes Xcode mutate the file and exit `73`, then requires drift status `1`,
+  the drift diagnostic, and no later Xcode phase.
+- [x] Require exactly one resolution flag token on each logged Xcode call.
+- [x] Snapshot Bash 3.2's `PIPESTATUS` immediately in CI. A nonzero Xcode status
+  wins over logger failures; when Xcode succeeds, any logger failure still
+  fails closed. The regression uses Xcode `73`, `tee` `9`, and formatter `0`.
+- [x] Run review-hardening RED and GREEN: pre-fix `135 passed, 3 failed`;
+  restored `138 passed, 0 failed`.
+- [x] Prove the new teeth: success-only drift verification yields `137 passed,
+  1 failed`; a duplicate flag yields `136 passed, 2 failed`; and a wrong Git
+  path makes clean-fixture entry-point tests fail before Xcode.
+
+The controller inventory is now 138 cases. The three added named regressions
+cover hidden worktree drift, failed-Xcode drift precedence, and CI Xcode-status
+precedence; the existing unstaged case now mutates real fixture bytes instead
+of selecting a fake outcome.
 
 ---
 
