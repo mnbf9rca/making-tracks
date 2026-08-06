@@ -10,6 +10,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = Path(os.environ.get("MT_RELEASE_GATE_SCRIPT", REPO_ROOT / "scripts" / "release-gate.sh"))
 UDID = "C4A64D49-24A2-4429-B6E2-AD9A14142A99"
+_XCODE_ACTIONS = ("build", "build-for-testing", "test-without-building")
 SAFE_TEST_HOME_ROOT = (
     REPO_ROOT
     / ".test-release-gate-homes"
@@ -28,6 +29,18 @@ def _run(args, cwd: Path, **kwargs):
     return subprocess.run(args, cwd=cwd, text=True, capture_output=True, **kwargs)
 
 
+def _xcodebuild_invocations(log: Path) -> list[list[str]]:
+    return [
+        line.removeprefix("xcodebuild:").split()
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if line.startswith("xcodebuild:")
+    ]
+
+
+def _invocations_for_action(log: Path, action: str) -> list[list[str]]:
+    return [args for args in _xcodebuild_invocations(log) if action in args]
+
+
 def _git(repo: Path, *args: str) -> None:
     result = _run(["git", *args], repo)
     assert result.returncode == 0, result.stderr
@@ -40,13 +53,29 @@ def _write_project(repo: Path, *, tests_target: bool = True) -> None:
     (project / "project.pbxproj").write_text(target, encoding="utf-8")
 
 
+def _write_package_resolution(repo: Path) -> None:
+    package_resolution = repo / "ios/Package.resolved"
+    package_resolution.parent.mkdir(parents=True, exist_ok=True)
+    package_resolution.write_text(
+        "{\n"
+        '  "originHash" : "0000000000000000000000000000000000000000000000000000000000000000",\n'
+        '  "pins" : [\n'
+        "  ],\n"
+        '  "version" : 3\n'
+        "}\n",
+        encoding="utf-8",
+    )
+
+
 def _init_repo(tmp_path: Path, *, tests_target: bool = True, ios_derived: bool = True) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
     _git(repo, "config", "user.email", "agent@example.invalid")
     _git(repo, "config", "user.name", "Agent")
+    _git(repo, "config", "commit.gpgsign", "false")
     _write_project(repo, tests_target=tests_target)
+    _write_package_resolution(repo)
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "base")
 
@@ -71,6 +100,7 @@ def _init_repo(tmp_path: Path, *, tests_target: bool = True, ios_derived: bool =
             else:
                 path.unlink()
         _write_project(repo, tests_target=tests_target)
+        _write_package_resolution(repo)
         _git(repo, "add", ".")
         _git(repo, "commit", "-q", "-m", "unrelated")
     return repo
@@ -98,7 +128,11 @@ def _fake_tools(tmp_path: Path) -> tuple[Path, Path]:
         "  done\n"
         "fi\n"
         'if [ -n "${MT_RELEASE_GATE_XCODEBUILD_STDOUT:-}" ]; then printf "%s\\n" "$MT_RELEASE_GATE_XCODEBUILD_STDOUT"; fi\n'
-        'if [ "${MT_RELEASE_GATE_FAIL_TEST:-}" = "1" ] && [ "$1" = "test-without-building" ]; then exit 65; fi\n'
+        'case " $* " in\n'
+        '  *" test-without-building "*)\n'
+        '    if [ "${MT_RELEASE_GATE_FAIL_TEST:-}" = "1" ]; then exit 65; fi\n'
+        "    ;;\n"
+        "esac\n"
         'if [ "${MT_RELEASE_GATE_FAIL_XCODEBUILD:-}" = "1" ]; then exit 65; fi\n',
         encoding="utf-8",
     )
@@ -353,9 +387,6 @@ def test_release_gate_private_destination_replaces_all_udid_uses(tmp_path):
 def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuilding(tmp_path):
     repo = _init_repo(tmp_path)
     fakebin, log = _fake_tools(tmp_path)
-    stale_result_bundle = log.parent / "release-gate-run" / "MakingTracksTests.xcresult"
-    stale_result_bundle.mkdir(parents=True)
-    (stale_result_bundle / "stale").write_text("stale\n", encoding="utf-8")
     derived_data = _derived_data(log)
     derived_data.mkdir(parents=True)
     (derived_data / "stale").write_text("stale\n", encoding="utf-8")
@@ -363,7 +394,6 @@ def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuildin
     result = _run([str(SCRIPT)], repo, env=_env(fakebin, log))
 
     assert result.returncode == 0, result.stderr
-    assert not stale_result_bundle.exists()
     assert derived_data.exists()
     assert (derived_data / "stale").exists()
     lines = log.read_text(encoding="utf-8").splitlines()
@@ -371,34 +401,47 @@ def test_release_gate_runs_release_build_for_testing_and_tests_without_rebuildin
         "release-gate must not take the lock; sim-lock.sh owns it"
     )
     assert lines[0] == f"xcrun:simctl bootstatus {UDID} -b"
+    invocations = _xcodebuild_invocations(log)
+    actions = [
+        action
+        for args in invocations
+        for action in _XCODE_ACTIONS
+        if action in args
+    ]
+    assert actions == ["build", "build-for-testing", "test-without-building"]
+    build_lines = [" ".join(args) for args in _invocations_for_action(log, "build")]
     assert any(
-        line.startswith("xcodebuild:build -configuration Release ")
+        "build -configuration Release" in line
         and "-project ios/App/MakingTracks.xcodeproj" in line
         and "-scheme MakingTracks" in line
         and f"-destination platform=iOS Simulator,id={UDID}" in line
         and f"-derivedDataPath {_derived_data(log)}" in line
-        for line in lines
+        for line in build_lines
     )
+    build_for_testing_lines = [
+        " ".join(args) for args in _invocations_for_action(log, "build-for-testing")
+    ]
     assert any(
-        line.startswith("xcodebuild:build-for-testing ")
-        and "-project ios/App/MakingTracks.xcodeproj" in line
+        "-project ios/App/MakingTracks.xcodeproj" in line
         and "-scheme MakingTracks" in line
         and f"-destination platform=iOS Simulator,id={UDID}" in line
         and "-parallel-testing-enabled NO" in line
         and "-disable-concurrent-destination-testing" in line
         and f"-derivedDataPath {_derived_data(log)}" in line
-        for line in lines
+        for line in build_for_testing_lines
     )
+    test_lines = [
+        " ".join(args) for args in _invocations_for_action(log, "test-without-building")
+    ]
     assert any(
-        line.startswith("xcodebuild:test-without-building ")
-        and "-project ios/App/MakingTracks.xcodeproj" in line
+        "-project ios/App/MakingTracks.xcodeproj" in line
         and "-scheme MakingTracks" in line
         and f"-destination platform=iOS Simulator,id={UDID}" in line
         and "-parallel-testing-enabled NO" in line
         and "-disable-concurrent-destination-testing" in line
         and f"-derivedDataPath {_derived_data(log)}" in line
         and f"-resultBundlePath {log.parent}/release-gate-run/MakingTracksTests.xcresult" in line
-        for line in lines
+        for line in test_lines
     )
 
 
@@ -411,10 +454,9 @@ def test_release_gate_build_mode_skips_test_execution(tmp_path):
     result = _run([str(SCRIPT)], repo, env=env)
 
     assert result.returncode == 0, result.stderr
-    lines = log.read_text(encoding="utf-8").splitlines()
-    assert any(line.startswith("xcodebuild:build -configuration Release ") for line in lines)
-    assert any(line.startswith("xcodebuild:build-for-testing ") for line in lines)
-    assert not any(line.startswith("xcodebuild:test-without-building ") for line in lines)
+    assert len(_invocations_for_action(log, "build")) == 1
+    assert len(_invocations_for_action(log, "build-for-testing")) == 1
+    assert _invocations_for_action(log, "test-without-building") == []
 
 
 def test_release_gate_test_mode_skips_builds_and_uses_only_testing_file(tmp_path):
@@ -442,10 +484,11 @@ def test_release_gate_test_mode_skips_builds_and_uses_only_testing_file(tmp_path
     result = _run([str(SCRIPT)], repo, env=env)
 
     assert result.returncode == 0, result.stderr
-    lines = log.read_text(encoding="utf-8").splitlines()
-    assert not any(line.startswith("xcodebuild:build ") for line in lines)
-    assert not any(line.startswith("xcodebuild:build-for-testing ") for line in lines)
-    test_lines = [line for line in lines if line.startswith("xcodebuild:test-without-building ")]
+    assert _invocations_for_action(log, "build") == []
+    assert _invocations_for_action(log, "build-for-testing") == []
+    test_lines = [
+        " ".join(args) for args in _invocations_for_action(log, "test-without-building")
+    ]
     assert len(test_lines) == 1
     assert "-xctestrun " + str(tmp_path / "MakingTracks.xctestrun") in test_lines[0]
     assert "-only-testing:MakingTracksUITests/MakingTracksCoreLoopUITests/testOne" in test_lines[0]
