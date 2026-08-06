@@ -46,6 +46,25 @@ def _guard_step() -> tuple[dict[str, str], str]:
     return env, "\n".join(script_lines) + "\n"
 
 
+def _guard_job_conditions() -> list[str]:
+    lines = WORKFLOW_PATH.read_text(encoding="utf-8").splitlines()
+    job_index = next(
+        index for index, line in enumerate(lines) if line.strip() == "source-branch-check:"
+    )
+    job_indent = len(lines[job_index]) - len(lines[job_index].lstrip())
+    condition_indents = {job_indent + 2, job_indent + 6}
+    conditions: list[str] = []
+    for line in lines[job_index + 1 :]:
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        if indent <= job_indent:
+            break
+        if indent in condition_indents and line.strip().startswith("if:"):
+            conditions.append(line.strip())
+    return conditions
+
+
 def test_guard_binds_repository_contexts_through_environment() -> None:
     env, _ = _guard_step()
 
@@ -53,31 +72,41 @@ def test_guard_binds_repository_contexts_through_environment() -> None:
     assert env["BASE_REPOSITORY"] == "${{ github.repository }}"
 
 
+def test_guard_job_and_step_cannot_skip_enforcement() -> None:
+    assert _guard_job_conditions() == []
+
+
 @pytest.mark.parametrize(
-    ("head_ref", "head_repository", "expected_status", "expected_output", "rejected_output"),
+    (
+        "head_ref",
+        "head_repository",
+        "expected_status",
+        "expected_output",
+        "rejected_outputs",
+    ),
     [
-        ("develop", "mnbf9rca/making-tracks", 0, "OK: promotion from develop", None),
-        ("ios", "mnbf9rca/making-tracks", 0, "OK: promotion from ios", None),
+        ("develop", "mnbf9rca/making-tracks", 0, "OK: promotion from develop", ()),
+        ("ios", "mnbf9rca/making-tracks", 0, "OK: promotion from ios", ()),
         (
             "develop",
             "attacker/making-tracks",
             1,
             "BLOCKED: promotion source repository",
-            "main only accepts promotions from develop or ios",
+            ("OK: promotion from", "main only accepts promotions from develop or ios"),
         ),
         (
             "ios",
             "attacker/making-tracks",
             1,
             "BLOCKED: promotion source repository",
-            "main only accepts promotions from develop or ios",
+            ("OK: promotion from", "main only accepts promotions from develop or ios"),
         ),
         (
             "feature",
             "mnbf9rca/making-tracks",
             1,
             "main only accepts promotions from develop or ios",
-            None,
+            (),
         ),
     ],
 )
@@ -86,7 +115,7 @@ def test_guard_enforces_repository_before_branch(
     head_repository: str,
     expected_status: int,
     expected_output: str,
-    rejected_output: str | None,
+    rejected_outputs: tuple[str, ...],
 ) -> None:
     _, script = _guard_step()
     env = os.environ.copy()
@@ -107,5 +136,5 @@ def test_guard_enforces_repository_before_branch(
 
     assert result.returncode == expected_status
     assert expected_output in result.stdout
-    if rejected_output is not None:
+    for rejected_output in rejected_outputs:
         assert rejected_output not in result.stdout
