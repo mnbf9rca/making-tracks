@@ -2554,6 +2554,109 @@ else
     "status=$owned_failure_rc failure_dir='$owned_failure_dir' runs=${#owned_failure_runs[@]} output='$(echo "$owned_failure_out" | tail -1)'"
 fi
 
+write_artifact_identity() {
+  local path="$1"
+  local udid="$2"
+
+  printf 'release-gate-artifact-v1\nudid=%s\n' "$udid" >"$path"
+}
+
+seed_successful_artifact() {
+  local run_dir="$1"
+  local udid="$2"
+
+  mkdir -p "$run_dir"
+  write_artifact_identity "$run_dir/.release-gate-owned" "$udid"
+  write_artifact_identity "$run_dir/.release-gate-success" "$udid"
+  printf '%s\n' preserve >"$run_dir/sentinel"
+}
+
+rm -rf "$RELEASE_RUN_DIR_A" "$RELEASE_RUN_DIR_B"
+mkdir -p "$ARTIFACT_RUNS_A"
+old_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9101"
+equal_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9102"
+unmarked_failure="$ARTIFACT_RUNS_A/run-20260801T000000Z-9103"
+wrong_owner="$ARTIFACT_RUNS_A/run-20260801T000000Z-9104"
+wrong_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9105"
+wrong_uuid="$ARTIFACT_RUNS_A/run-20260801T000000Z-9106"
+symlink_owner="$ARTIFACT_RUNS_A/run-20260801T000000Z-9107"
+symlink_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9108"
+invalid_name="$ARTIFACT_RUNS_A/run-invalid-9109"
+nested_success="$ARTIFACT_RUNS_A/container/run-20260801T000000Z-9110"
+outside_success="$RELEASE_RUN_DIR_B/runs/run-20260801T000000Z-9111"
+symlink_target="$TMP/run-20260801T000000Z-9112-target"
+symlink_run="$ARTIFACT_RUNS_A/run-20260801T000000Z-9112"
+external_owner="$TMP/release-gate-owner-marker"
+external_success="$TMP/release-gate-success-marker"
+
+seed_successful_artifact "$old_success" "$RELEASE_UDID_A"
+seed_successful_artifact "$equal_success" "$RELEASE_UDID_A"
+mkdir -p "$unmarked_failure"
+write_artifact_identity "$unmarked_failure/.release-gate-owned" "$RELEASE_UDID_A"
+printf '%s\n' preserve >"$unmarked_failure/sentinel"
+seed_successful_artifact "$wrong_owner" "$RELEASE_UDID_A"
+printf '%s\n' wrong >"$wrong_owner/.release-gate-owned"
+seed_successful_artifact "$wrong_success" "$RELEASE_UDID_A"
+printf '%s\n' wrong >"$wrong_success/.release-gate-success"
+seed_successful_artifact "$wrong_uuid" "$RELEASE_UDID_B"
+seed_successful_artifact "$invalid_name" "$RELEASE_UDID_A"
+seed_successful_artifact "$nested_success" "$RELEASE_UDID_A"
+seed_successful_artifact "$outside_success" "$RELEASE_UDID_B"
+mkdir -p "$symlink_target"
+printf '%s\n' preserve >"$symlink_target/sentinel"
+ln -s "$symlink_target" "$symlink_run"
+mkdir -p "$symlink_owner" "$symlink_success"
+write_artifact_identity "$external_owner" "$RELEASE_UDID_A"
+write_artifact_identity "$external_success" "$RELEASE_UDID_A"
+ln -s "$external_owner" "$symlink_owner/.release-gate-owned"
+write_artifact_identity "$symlink_owner/.release-gate-success" "$RELEASE_UDID_A"
+printf '%s\n' preserve >"$symlink_owner/sentinel"
+write_artifact_identity "$symlink_success/.release-gate-owned" "$RELEASE_UDID_A"
+ln -s "$external_success" "$symlink_success/.release-gate-success"
+printf '%s\n' preserve >"$symlink_success/sentinel"
+
+TZ=UTC touch -t 197001020733.19 "$old_success/.release-gate-success"
+TZ=UTC touch -t 197001020733.20 "$equal_success/.release-gate-success"
+for retained_marker in \
+  "$wrong_owner/.release-gate-success" \
+  "$wrong_success/.release-gate-success" \
+  "$wrong_uuid/.release-gate-success" \
+  "$invalid_name/.release-gate-success" \
+  "$nested_success/.release-gate-success" \
+  "$outside_success/.release-gate-success" \
+  "$symlink_owner/.release-gate-success"; do
+  TZ=UTC touch -t 197001020733.19 "$retained_marker"
+done
+
+: >"$XCODEBUILD_LOG"
+set +e
+prune_out="$(run_artifact_gate full MT_RELEASE_GATE_TEST_NOW=200000 2>&1)"
+prune_rc=$?
+set -e
+current_owned_run="$(echo "$prune_out" | sed -n 's/^release-gate: owned artifacts: //p' | head -1)"
+if [ "$prune_rc" -eq 0 ] &&
+   [ ! -e "$old_success" ] &&
+   [ -f "$equal_success/sentinel" ] &&
+   [ -f "$unmarked_failure/sentinel" ] &&
+   [ -f "$wrong_owner/sentinel" ] &&
+   [ -f "$wrong_success/sentinel" ] &&
+   [ -f "$wrong_uuid/sentinel" ] &&
+   [ -f "$invalid_name/sentinel" ] &&
+   [ -f "$nested_success/sentinel" ] &&
+   [ -f "$outside_success/sentinel" ] &&
+   [ -f "$symlink_target/sentinel" ] &&
+   [ -L "$symlink_run" ] &&
+   [ -f "$symlink_owner/sentinel" ] &&
+   [ -f "$symlink_success/sentinel" ] &&
+   [ -n "$current_owned_run" ] &&
+   [ -d "$current_owned_run" ] &&
+   [ -f "$current_owned_run/.release-gate-success" ]; then
+  record_ok "successful full gate prunes only exact owned successes older than 86400 seconds"
+else
+  record_fail "successful full gate prunes only exact owned successes older than 86400 seconds" \
+    "status=$prune_rc old=$(test -e "$old_success" && echo present || echo removed) current='$current_owned_run' output='$(echo "$prune_out" | tail -1)'"
+fi
+
 echo
 echo "sim-lock: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

@@ -70,7 +70,10 @@ XCTESTRUN_FILE="${MT_RELEASE_GATE_XCTESTRUN_FILE:-}"
 ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
 DERIVED_DATA_MAX_AGE_SECONDS="${MT_RELEASE_GATE_DERIVED_DATA_MAX_AGE_SECONDS:-604800}"
 ARTIFACT_MARKER_SCHEMA="release-gate-artifact-v1"
+# #546 planner ruling: successful local artifacts are eligible only when strictly older than 24 hours.
+SUCCESSFUL_ARTIFACT_MAX_AGE_SECONDS=86400
 OWNS_ARTIFACT_RUN=false
+PRUNE_AFTER_SUCCESS=false
 RUNS_ROOT=""
 RUNS_ROOT_CANONICAL=""
 OWNERSHIP_MARKER=""
@@ -83,6 +86,18 @@ refuse() {
 
 mtime_seconds() {
   stat -f %m "$1" 2>/dev/null || echo 0
+}
+
+gate_now_seconds() {
+  if [ "${MT_SIM_LOCK_TEST_MODE:-}" = "1" ] &&
+     [ -n "${MT_RELEASE_GATE_TEST_NOW:-}" ]; then
+    case "$MT_RELEASE_GATE_TEST_NOW" in
+      *[!0-9]*) refuse "MT_RELEASE_GATE_TEST_NOW must be decimal seconds in test mode" ;;
+    esac
+    printf '%s\n' "$MT_RELEASE_GATE_TEST_NOW"
+    return
+  fi
+  date +%s
 }
 
 canonical_directory() {
@@ -164,6 +179,11 @@ prepare_artifact_paths() {
     write_identity_marker "$OWNERSHIP_MARKER"
     RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
     ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
+    if [ "$MODE" = "full" ] &&
+       [ -z "$ONLY_TESTING_FILE" ] &&
+       [ -z "$XCTESTRUN_FILE" ]; then
+      PRUNE_AFTER_SUCCESS=true
+    fi
     echo "release-gate: owned artifacts: $RUN_DIR" >&2
     return
   fi
@@ -200,6 +220,50 @@ finalize_owned_artifacts() {
     refuse "release-gate success marker already exists: $SUCCESS_MARKER"
   fi
   write_identity_marker "$SUCCESS_MARKER"
+  [ "$PRUNE_AFTER_SUCCESS" != "true" ] || prune_successful_artifacts
+}
+
+prune_successful_artifacts() {
+  local age
+  local candidate
+  local candidate_basename
+  local candidate_canonical
+  local candidate_parent_canonical
+  local marker_mtime
+  local now
+
+  validate_current_owned_run
+  [ -d "$RUNS_ROOT" ] && [ ! -L "$RUNS_ROOT" ] ||
+    refuse "release-gate runs root became unsafe before cleanup: $RUNS_ROOT"
+  [ "$(canonical_directory "$RUNS_ROOT")" = "$RUNS_ROOT_CANONICAL" ] ||
+    refuse "release-gate runs root changed before cleanup: $RUNS_ROOT"
+  now="$(gate_now_seconds)"
+
+  for candidate in "$RUNS_ROOT"/*; do
+    if [ ! -e "$candidate" ] && [ ! -L "$candidate" ]; then
+      continue
+    fi
+    [ "$candidate" != "$RUN_DIR" ] || continue
+    candidate_basename="$(basename "$candidate")"
+    [[ "$candidate_basename" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] || continue
+    [ -d "$candidate" ] && [ ! -L "$candidate" ] || continue
+    candidate_canonical="$(canonical_directory "$candidate")" || continue
+    candidate_parent_canonical="$(canonical_directory "$(dirname "$candidate_canonical")")" || continue
+    [ "$candidate_parent_canonical" = "$RUNS_ROOT_CANONICAL" ] || continue
+    [ "$candidate_canonical" = "$RUNS_ROOT_CANONICAL/$candidate_basename" ] || continue
+    marker_matches_identity "$candidate/.release-gate-owned" || continue
+    marker_matches_identity "$candidate/.release-gate-success" || continue
+    marker_mtime="$(stat -f %m "$candidate/.release-gate-success" 2>/dev/null)" || continue
+    case "$marker_mtime" in
+      ""|*[!0-9]*) continue ;;
+    esac
+    age=$((now - marker_mtime))
+    [ "$age" -gt "$SUCCESSFUL_ARTIFACT_MAX_AGE_SECONDS" ] || continue
+
+    if ! rm -rf -- "$candidate"; then
+      echo "release-gate: cleanup warning: could not remove eligible successful artifact: $candidate" >&2
+    fi
+  done
 }
 
 prune_derived_data_if_stale() {
