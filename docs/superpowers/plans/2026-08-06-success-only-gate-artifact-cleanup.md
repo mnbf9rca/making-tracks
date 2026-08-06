@@ -376,7 +376,7 @@ Expected before commit: every durable-evidence reference resolves beneath `Libra
 - Review: all branch changes against `origin/ios`
 - Modify only for verified findings: files already in scope
 
-- [ ] **Step 1: Verify the exact branch and diff**
+- [x] **Step 1: Verify the exact branch and diff**
 
 ```bash
 git fetch origin ios
@@ -387,7 +387,7 @@ git diff --stat origin/ios...HEAD
 git log --show-signature --oneline origin/ios..HEAD
 ```
 
-- [ ] **Step 2: Run repeatable host validation**
+- [x] **Step 2: Run repeatable host validation**
 
 ```bash
 ./scripts/sim-lock-tests.sh
@@ -399,7 +399,7 @@ shellcheck scripts/release-gate.sh scripts/sim-lock-tests.sh
 
 Record each exact passed/failed count. A sandbox denial of the intentional home-cache fixture is environmental only after the same command succeeds with approved access.
 
-- [ ] **Step 3: Request independent adversarial reviews**
+- [x] **Step 3: Request independent adversarial reviews**
 
 Use the project-required independent agents on the complete diff with non-overlapping prompts:
 
