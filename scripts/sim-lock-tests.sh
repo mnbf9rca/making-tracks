@@ -2154,8 +2154,62 @@ printf '%s\n' \
 # shellcheck disable=SC2016 # Expanded when the fake xcodebuild runs.
 printf '%s\n' \
   '#!/usr/bin/env bash' \
-  'printf "%s\n" "$*" >>"$MT_TEST_XCODEBUILD_LOG"' >"$FAKE_BIN/xcodebuild"
+  'printf "%s\n" "$*" >>"$MT_TEST_XCODEBUILD_LOG"' \
+  'test_status=0' \
+  'case " $* " in *" test-without-building "*) test_status="${MT_TEST_XCODEBUILD_TEST_STATUS:-0}" ;; esac' \
+  'while [ "$#" -gt 0 ]; do' \
+  '  case "$1" in' \
+  '    -resultBundlePath)' \
+  '      shift' \
+  '      mkdir -p "$1"' \
+  '      printf "%s\n" fake-result >"$1/Info.plist"' \
+  '      ;;' \
+  '    -test-enumeration-output-path)' \
+  '      shift' \
+  '      mkdir -p "$(dirname "$1")"' \
+  '      printf "%s\n" "{\"tests\":[]}" >"$1"' \
+  '      ;;' \
+  '  esac' \
+  '  shift' \
+  'done' \
+  'exit "$test_status"' >"$FAKE_BIN/xcodebuild"
 chmod +x "$FAKE_BIN/git" "$FAKE_BIN/xcrun" "$FAKE_BIN/xcodebuild"
+
+run_artifact_gate() {
+  local mode="$1"
+  shift
+
+  env "$@" \
+    PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_SIM_LOCK_SEAT=codex1 \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_DERIVED_DATA="$SAFE_TEST_ROOT/artifact-derived-data" \
+    MT_RELEASE_GATE_MODE="$mode" \
+    "$RELEASE_GATE"
+}
+
+run_artifact_gate_with_system_bash() {
+  local mode="$1"
+  shift
+
+  env "$@" \
+    PATH="$FAKE_BIN:/bin:/usr/bin:/usr/sbin:/sbin" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_SIM_LOCK_TEST_MODE=1 \
+    MT_SIM_LOCK=1 \
+    MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
+    MT_SIM_LOCK_SEAT=codex1 \
+    MT_SIM_LOCK_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_DERIVED_DATA="$SAFE_TEST_ROOT/artifact-derived-data" \
+    MT_RELEASE_GATE_MODE="$mode" \
+    /bin/bash "$RELEASE_GATE"
+}
 
 rm -f "$XCODEBUILD_LOG"
 set +e
@@ -2510,6 +2564,379 @@ if [ "$derived_a" = "$expected_a" ] && [ "$derived_b" = "$expected_b" ]; then
 else
   record_fail "derives the exact persistent default DerivedData path for the selected seat" \
     "first='$derived_a' expected='$expected_a' second='$derived_b' expected='$expected_b'"
+fi
+
+echo
+echo "release-gate artifact ownership:"
+
+ARTIFACT_RUNS_A="$RELEASE_RUN_DIR_A/runs"
+EXPECTED_ARTIFACT_MARKER="$(printf 'release-gate-artifact-v1\nudid=%s' "$RELEASE_UDID_A")"
+
+rm -rf "$RELEASE_RUN_DIR_A"
+: >"$XCODEBUILD_LOG"
+set +e
+owned_success_out="$(run_artifact_gate test 2>&1)"
+owned_success_rc=$?
+set -e
+owned_success_runs=("$ARTIFACT_RUNS_A"/run-*)
+if [ "$owned_success_rc" -eq 0 ] &&
+   [ "${#owned_success_runs[@]}" -eq 1 ] &&
+   [ -d "${owned_success_runs[0]}/MakingTracksTests.xcresult" ] &&
+   [ ! -L "${owned_success_runs[0]}/.release-gate-owned" ] &&
+   [ "$(cat "${owned_success_runs[0]}/.release-gate-owned" 2>/dev/null)" = "$EXPECTED_ARTIFACT_MARKER" ] &&
+   [ ! -L "${owned_success_runs[0]}/.release-gate-success" ] &&
+   [ "$(cat "${owned_success_runs[0]}/.release-gate-success" 2>/dev/null)" = "$EXPECTED_ARTIFACT_MARKER" ]; then
+  record_ok "successful local artifact run is uniquely owned and success-marked"
+else
+  record_fail "successful local artifact run is uniquely owned and success-marked" \
+    "status=$owned_success_rc runs=${#owned_success_runs[@]} output='$(echo "$owned_success_out" | tail -1)'"
+fi
+
+rm -rf "$RELEASE_RUN_DIR_A"
+: >"$XCODEBUILD_LOG"
+set +e
+system_bash_artifact_out="$(run_artifact_gate_with_system_bash test 2>&1)"
+system_bash_artifact_rc=$?
+set -e
+if [ "$system_bash_artifact_rc" -eq 0 ] &&
+   echo "$system_bash_artifact_out" | grep -q 'phase end: tests without building status=0'; then
+  record_ok "runs an unfiltered owned test gate with macOS system Bash 3.2"
+else
+  record_fail "runs an unfiltered owned test gate with macOS system Bash 3.2" \
+    "status=$system_bash_artifact_rc output='$(echo "$system_bash_artifact_out" | tail -1)'"
+fi
+
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A/run-20260801T000000Z-9001"
+printf 'release-gate-artifact-v1\nudid=%s\n' "$RELEASE_UDID_A" \
+  >"$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/.release-gate-owned"
+printf 'release-gate-artifact-v1\nudid=%s\n' "$RELEASE_UDID_A" \
+  >"$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/.release-gate-success"
+printf '%s\n' preserve >"$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+owned_failure_out="$(run_artifact_gate full MT_TEST_XCODEBUILD_TEST_STATUS=9 2>&1)"
+owned_failure_rc=$?
+set -e
+owned_failure_runs=("$ARTIFACT_RUNS_A"/run-*)
+owned_failure_dir=""
+for candidate in "${owned_failure_runs[@]}"; do
+  [ "$(basename "$candidate")" = "run-20260801T000000Z-9001" ] || owned_failure_dir="$candidate"
+done
+if [ "$owned_failure_rc" -eq 9 ] &&
+   [ -n "$owned_failure_dir" ] &&
+   [ -d "$owned_failure_dir/MakingTracksTests.xcresult" ] &&
+   [ "$(cat "$owned_failure_dir/.release-gate-owned" 2>/dev/null)" = "$EXPECTED_ARTIFACT_MARKER" ] &&
+   [ ! -e "$owned_failure_dir/.release-gate-success" ] &&
+   [ -f "$ARTIFACT_RUNS_A/run-20260801T000000Z-9001/sentinel" ]; then
+  record_ok "failed full gate preserves its unmarked result and does not prune"
+else
+  record_fail "failed full gate preserves its unmarked result and does not prune" \
+    "status=$owned_failure_rc failure_dir='$owned_failure_dir' runs=${#owned_failure_runs[@]} output='$(echo "$owned_failure_out" | tail -1)'"
+fi
+
+write_artifact_identity() {
+  local path="$1"
+  local udid="$2"
+
+  printf 'release-gate-artifact-v1\nudid=%s\n' "$udid" >"$path"
+}
+
+seed_successful_artifact() {
+  local run_dir="$1"
+  local udid="$2"
+
+  mkdir -p "$run_dir"
+  write_artifact_identity "$run_dir/.release-gate-owned" "$udid"
+  write_artifact_identity "$run_dir/.release-gate-success" "$udid"
+  printf '%s\n' preserve >"$run_dir/sentinel"
+}
+
+rm -rf "$RELEASE_RUN_DIR_A" "$RELEASE_RUN_DIR_B"
+mkdir -p "$ARTIFACT_RUNS_A"
+old_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9101"
+equal_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9102"
+unmarked_failure="$ARTIFACT_RUNS_A/run-20260801T000000Z-9103"
+wrong_owner="$ARTIFACT_RUNS_A/run-20260801T000000Z-9104"
+wrong_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9105"
+wrong_uuid="$ARTIFACT_RUNS_A/run-20260801T000000Z-9106"
+symlink_owner="$ARTIFACT_RUNS_A/run-20260801T000000Z-9107"
+symlink_success="$ARTIFACT_RUNS_A/run-20260801T000000Z-9108"
+invalid_name="$ARTIFACT_RUNS_A/run-invalid-9109"
+nested_success="$ARTIFACT_RUNS_A/container/run-20260801T000000Z-9110"
+outside_success="$RELEASE_RUN_DIR_B/runs/run-20260801T000000Z-9111"
+symlink_target="$TMP/run-20260801T000000Z-9112-target"
+symlink_run="$ARTIFACT_RUNS_A/run-20260801T000000Z-9112"
+external_owner="$TMP/release-gate-owner-marker"
+external_success="$TMP/release-gate-success-marker"
+
+seed_successful_artifact "$old_success" "$RELEASE_UDID_A"
+seed_successful_artifact "$equal_success" "$RELEASE_UDID_A"
+mkdir -p "$unmarked_failure"
+write_artifact_identity "$unmarked_failure/.release-gate-owned" "$RELEASE_UDID_A"
+printf '%s\n' preserve >"$unmarked_failure/sentinel"
+seed_successful_artifact "$wrong_owner" "$RELEASE_UDID_A"
+printf '%s\n' wrong >"$wrong_owner/.release-gate-owned"
+seed_successful_artifact "$wrong_success" "$RELEASE_UDID_A"
+printf '%s\n' wrong >"$wrong_success/.release-gate-success"
+seed_successful_artifact "$wrong_uuid" "$RELEASE_UDID_B"
+seed_successful_artifact "$invalid_name" "$RELEASE_UDID_A"
+seed_successful_artifact "$nested_success" "$RELEASE_UDID_A"
+seed_successful_artifact "$outside_success" "$RELEASE_UDID_B"
+mkdir -p "$symlink_target"
+printf '%s\n' preserve >"$symlink_target/sentinel"
+ln -s "$symlink_target" "$symlink_run"
+mkdir -p "$symlink_owner" "$symlink_success"
+write_artifact_identity "$external_owner" "$RELEASE_UDID_A"
+write_artifact_identity "$external_success" "$RELEASE_UDID_A"
+ln -s "$external_owner" "$symlink_owner/.release-gate-owned"
+write_artifact_identity "$symlink_owner/.release-gate-success" "$RELEASE_UDID_A"
+printf '%s\n' preserve >"$symlink_owner/sentinel"
+write_artifact_identity "$symlink_success/.release-gate-owned" "$RELEASE_UDID_A"
+ln -s "$external_success" "$symlink_success/.release-gate-success"
+printf '%s\n' preserve >"$symlink_success/sentinel"
+
+TZ=UTC touch -t 197001020733.19 "$old_success/.release-gate-success"
+TZ=UTC touch -t 197001020733.20 "$equal_success/.release-gate-success"
+for retained_marker in \
+  "$wrong_owner/.release-gate-success" \
+  "$wrong_success/.release-gate-success" \
+  "$wrong_uuid/.release-gate-success" \
+  "$invalid_name/.release-gate-success" \
+  "$nested_success/.release-gate-success" \
+  "$outside_success/.release-gate-success" \
+  "$symlink_owner/.release-gate-success"; do
+  TZ=UTC touch -t 197001020733.19 "$retained_marker"
+done
+
+: >"$XCODEBUILD_LOG"
+set +e
+prune_out="$(run_artifact_gate full MT_RELEASE_GATE_TEST_NOW=200000 2>&1)"
+prune_rc=$?
+set -e
+current_owned_run="$(echo "$prune_out" | sed -n 's/^release-gate: owned artifacts: //p' | head -1)"
+if [ "$prune_rc" -eq 0 ] &&
+   [ ! -e "$old_success" ] &&
+   [ -f "$equal_success/sentinel" ] &&
+   [ -f "$unmarked_failure/sentinel" ] &&
+   [ -f "$wrong_owner/sentinel" ] &&
+   [ -f "$wrong_success/sentinel" ] &&
+   [ -f "$wrong_uuid/sentinel" ] &&
+   [ -f "$invalid_name/sentinel" ] &&
+   [ -f "$nested_success/sentinel" ] &&
+   [ -f "$outside_success/sentinel" ] &&
+   [ -f "$symlink_target/sentinel" ] &&
+   [ -L "$symlink_run" ] &&
+   [ -f "$symlink_owner/sentinel" ] &&
+   [ -f "$symlink_success/sentinel" ] &&
+   [ -n "$current_owned_run" ] &&
+   [ -d "$current_owned_run" ] &&
+   [ -f "$current_owned_run/.release-gate-success" ]; then
+  record_ok "successful full gate prunes only exact owned successes older than 86400 seconds"
+else
+  record_fail "successful full gate prunes only exact owned successes older than 86400 seconds" \
+    "status=$prune_rc old=$(test -e "$old_success" && echo present || echo removed) current='$current_owned_run' output='$(echo "$prune_out" | tail -1)'"
+fi
+
+echo
+echo "release-gate caller and CI artifact ownership:"
+
+CALLER_RESULT="$TMP/caller-result.xcresult"
+mkdir -p "$CALLER_RESULT"
+printf '%s\n' preserve >"$CALLER_RESULT/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+caller_result_out="$(run_artifact_gate test MT_RELEASE_GATE_RESULT_BUNDLE="$CALLER_RESULT" 2>&1)"
+caller_result_rc=$?
+set -e
+if [ "$caller_result_rc" -ne 0 ] &&
+   echo "$caller_result_out" | grep -q 'caller-owned result already exists' &&
+   [ -f "$CALLER_RESULT/sentinel" ] &&
+   [ ! -s "$XCODEBUILD_LOG" ]; then
+  record_ok "refuses and preserves an existing caller-named result before Xcode"
+else
+  record_fail "refuses and preserves an existing caller-named result before Xcode" \
+    "status=$caller_result_rc sentinel=$(test -f "$CALLER_RESULT/sentinel" && echo present || echo missing) output='$(echo "$caller_result_out" | tail -1)'"
+fi
+
+CALLER_RUN="$TMP/caller-run"
+mkdir -p "$CALLER_RUN/MakingTracksTests.xcresult"
+printf '%s\n' preserve >"$CALLER_RUN/MakingTracksTests.xcresult/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+caller_run_out="$(run_artifact_gate test MT_RELEASE_GATE_RUN_DIR="$CALLER_RUN" 2>&1)"
+caller_run_rc=$?
+set -e
+if [ "$caller_run_rc" -ne 0 ] &&
+   echo "$caller_run_out" | grep -q 'caller-owned result already exists' &&
+   [ -f "$CALLER_RUN/MakingTracksTests.xcresult/sentinel" ] &&
+   [ ! -s "$XCODEBUILD_LOG" ]; then
+  record_ok "refuses and preserves an existing result beneath a caller-named run directory"
+else
+  record_fail "refuses and preserves an existing result beneath a caller-named run directory" \
+    "status=$caller_run_rc sentinel=$(test -f "$CALLER_RUN/MakingTracksTests.xcresult/sentinel" && echo present || echo missing) output='$(echo "$caller_run_out" | tail -1)'"
+fi
+
+FRESH_CALLER_RESULT="$TMP/fresh-caller-result.xcresult"
+: >"$XCODEBUILD_LOG"
+set +e
+fresh_caller_out="$(run_artifact_gate test MT_RELEASE_GATE_RESULT_BUNDLE="$FRESH_CALLER_RESULT" 2>&1)"
+fresh_caller_rc=$?
+set -e
+if [ "$fresh_caller_rc" -eq 0 ] &&
+   [ -f "$FRESH_CALLER_RESULT/Info.plist" ] &&
+   [ ! -e "$(dirname "$FRESH_CALLER_RESULT")/.release-gate-owned" ] &&
+   [ ! -e "$(dirname "$FRESH_CALLER_RESULT")/.release-gate-success" ]; then
+  record_ok "populates a fresh caller-named result without enrolling it in cleanup"
+else
+  record_fail "populates a fresh caller-named result without enrolling it in cleanup" \
+    "status=$fresh_caller_rc output='$(echo "$fresh_caller_out" | tail -1)'"
+fi
+
+CALLER_ENUMERATION="$TMP/caller-enumerated-tests.json"
+: >"$XCODEBUILD_LOG"
+set +e
+caller_enumeration_out="$(run_artifact_gate enumerate MT_RELEASE_GATE_ENUMERATED_TESTS_JSON="$CALLER_ENUMERATION" 2>&1)"
+caller_enumeration_rc=$?
+set -e
+if [ "$caller_enumeration_rc" -eq 0 ] &&
+   grep -q '"tests":\[\]' "$CALLER_ENUMERATION"; then
+  record_ok "preserves an explicit enumeration artifact outside the cleanup root"
+else
+  record_fail "preserves an explicit enumeration artifact outside the cleanup root" \
+    "status=$caller_enumeration_rc output='$(echo "$caller_enumeration_out" | tail -1)'"
+fi
+
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A"
+nested_caller_run="$ARTIFACT_RUNS_A/run-20260801T000000Z-9201"
+nested_caller_result="$nested_caller_run/caller-owned.xcresult"
+seed_successful_artifact "$nested_caller_run" "$RELEASE_UDID_A"
+: >"$XCODEBUILD_LOG"
+set +e
+nested_caller_out="$(run_artifact_gate test MT_RELEASE_GATE_RESULT_BUNDLE="$nested_caller_result" 2>&1)"
+nested_caller_rc=$?
+set -e
+TZ=UTC touch -t 197001020733.19 "$nested_caller_run/.release-gate-success"
+set +e
+nested_prune_out="$(run_artifact_gate full MT_RELEASE_GATE_TEST_NOW=200000 2>&1)"
+nested_prune_rc=$?
+set -e
+if [ "$nested_caller_rc" -eq 0 ] &&
+   [ "$nested_prune_rc" -eq 0 ] &&
+   [ -f "$nested_caller_result/Info.plist" ] &&
+   [ -f "$nested_caller_run/.release-gate-preserve" ]; then
+  record_ok "caller override inside an owned sibling permanently disqualifies that sibling"
+else
+  record_fail "caller override inside an owned sibling permanently disqualifies that sibling" \
+    "caller_status=$nested_caller_rc prune_status=$nested_prune_rc result=$(test -f "$nested_caller_result/Info.plist" && echo present || echo missing) caller_output='$(echo "$nested_caller_out" | tail -1)' prune_output='$(echo "$nested_prune_out" | tail -1)'"
+fi
+
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A"
+nested_enumeration_run="$ARTIFACT_RUNS_A/run-20260801T000000Z-9202"
+nested_enumeration_result="$nested_enumeration_run/caller-enumerated-tests.json"
+seed_successful_artifact "$nested_enumeration_run" "$RELEASE_UDID_A"
+: >"$XCODEBUILD_LOG"
+set +e
+nested_enumeration_out="$(run_artifact_gate enumerate \
+  MT_RELEASE_GATE_ENUMERATED_TESTS_JSON="$nested_enumeration_result" 2>&1)"
+nested_enumeration_rc=$?
+set -e
+TZ=UTC touch -t 197001020733.19 "$nested_enumeration_run/.release-gate-success"
+set +e
+nested_enumeration_prune_out="$(run_artifact_gate full MT_RELEASE_GATE_TEST_NOW=200000 2>&1)"
+nested_enumeration_prune_rc=$?
+set -e
+if [ "$nested_enumeration_rc" -eq 0 ] &&
+   [ "$nested_enumeration_prune_rc" -eq 0 ] &&
+   grep -q '"tests":\[\]' "$nested_enumeration_result" &&
+   [ -f "$nested_enumeration_run/.release-gate-preserve" ]; then
+  record_ok "enumeration override inside an owned sibling permanently disqualifies that sibling"
+else
+  record_fail "enumeration override inside an owned sibling permanently disqualifies that sibling" \
+    "enumerate_status=$nested_enumeration_rc prune_status=$nested_enumeration_prune_rc result=$(test -f "$nested_enumeration_result" && echo present || echo missing) enumerate_output='$(echo "$nested_enumeration_out" | tail -1)' prune_output='$(echo "$nested_enumeration_prune_out" | tail -1)'"
+fi
+
+# shellcheck disable=SC2016 # Expanded when the fake cleanup commands run.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'last=""' \
+  'for argument in "$@"; do last="$argument"; done' \
+  'if [ -n "${MT_TEST_SWAP_CANDIDATE:-}" ] && [ "$last" = "$MT_TEST_SWAP_CANDIDATE" ] && [ -d "$MT_TEST_SWAP_REPLACEMENT" ]; then' \
+  '  /bin/mv "$MT_TEST_SWAP_CANDIDATE" "$MT_TEST_SWAP_AWAY"' \
+  '  /bin/mv "$MT_TEST_SWAP_REPLACEMENT" "$MT_TEST_SWAP_CANDIDATE"' \
+  'fi' \
+  'exec /bin/rm "$@"' >"$FAKE_BIN/rm"
+# shellcheck disable=SC2016 # Expanded when the fake cleanup commands run.
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'if [ -n "${MT_TEST_SWAP_CANDIDATE:-}" ] && [ "${1:-}" = "$MT_TEST_SWAP_CANDIDATE" ] && [ -d "$MT_TEST_SWAP_REPLACEMENT" ]; then' \
+  '  /bin/mv "$MT_TEST_SWAP_CANDIDATE" "$MT_TEST_SWAP_AWAY"' \
+  '  /bin/mv "$MT_TEST_SWAP_REPLACEMENT" "$MT_TEST_SWAP_CANDIDATE"' \
+  'fi' \
+  'exec /bin/mv "$@"' >"$FAKE_BIN/mv"
+chmod +x "$FAKE_BIN/rm" "$FAKE_BIN/mv"
+
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A"
+swap_candidate="$ARTIFACT_RUNS_A/run-20260801T000000Z-9301"
+swap_replacement="$ARTIFACT_RUNS_A/run-20260801T000000Z-9302"
+swap_away="$TMP/swap-validated-success"
+seed_successful_artifact "$swap_candidate" "$RELEASE_UDID_A"
+mkdir -p "$swap_replacement"
+write_artifact_identity "$swap_replacement/.release-gate-owned" "$RELEASE_UDID_A"
+printf '%s\n' failure-evidence >"$swap_replacement/failure-sentinel"
+TZ=UTC touch -t 197001020733.19 "$swap_candidate/.release-gate-success"
+set +e
+swap_prune_out="$(run_artifact_gate full \
+  MT_RELEASE_GATE_TEST_NOW=200000 \
+  MT_TEST_SWAP_CANDIDATE="$swap_candidate" \
+  MT_TEST_SWAP_REPLACEMENT="$swap_replacement" \
+  MT_TEST_SWAP_AWAY="$swap_away" 2>&1)"
+swap_prune_rc=$?
+set -e
+if [ "$swap_prune_rc" -eq 0 ] &&
+   [ -f "$swap_candidate/failure-sentinel" ] &&
+   [ -d "$swap_away" ]; then
+  record_ok "detects a candidate pathname replacement before deletion and restores failure evidence"
+else
+  record_fail "detects a candidate pathname replacement before deletion and restores failure evidence" \
+    "status=$swap_prune_rc failure=$(test -f "$swap_candidate/failure-sentinel" && echo preserved || echo missing) validated=$(test -d "$swap_away" && echo moved || echo missing) output='$(echo "$swap_prune_out" | tail -1)'"
+fi
+
+printf '%s\n' '#!/usr/bin/env bash' 'cat' >"$FAKE_BIN/xcbeautify"
+chmod +x "$FAKE_BIN/xcbeautify"
+CI_RUN="$TMP/ci-release-run"
+CI_RESULT="$CI_RUN/ci-result.xcresult"
+mkdir -p "$CI_RESULT"
+printf '%s\n' replace >"$CI_RESULT/sentinel"
+: >"$XCODEBUILD_LOG"
+set +e
+ci_artifact_out="$(
+  PATH="$FAKE_BIN:$PATH" \
+    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    GITHUB_ACTIONS=true \
+    MT_RELEASE_GATE_SKIP_LOCK=1 \
+    MT_RELEASE_GATE_CI_DESTINATION="platform=iOS Simulator,id=$RELEASE_UDID_A" \
+    MT_RELEASE_GATE_RUN_DIR="$CI_RUN" \
+    MT_RELEASE_GATE_RESULT_BUNDLE="$CI_RESULT" \
+    MT_RELEASE_GATE_DERIVED_DATA="$SAFE_TEST_ROOT/ci-derived-data" \
+    MT_RELEASE_GATE_MODE=test \
+    "$RELEASE_GATE" 2>&1
+)"
+ci_artifact_rc=$?
+set -e
+if [ "$ci_artifact_rc" -eq 0 ] &&
+   [ -f "$CI_RESULT/Info.plist" ] &&
+   [ ! -e "$CI_RESULT/sentinel" ] &&
+   [ ! -e "$CI_RUN/.release-gate-owned" ] &&
+   [ ! -e "$CI_RUN/.release-gate-success" ]; then
+  record_ok "keeps CI explicit-artifact replacement outside local ownership markers"
+else
+  record_fail "keeps CI explicit-artifact replacement outside local ownership markers" \
+    "status=$ci_artifact_rc sentinel=$(test -e "$CI_RESULT/sentinel" && echo present || echo removed) output='$(echo "$ci_artifact_out" | tail -1)'"
 fi
 
 echo
