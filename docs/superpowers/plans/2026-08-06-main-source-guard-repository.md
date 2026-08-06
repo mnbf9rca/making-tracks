@@ -191,7 +191,7 @@ Expected: `8 passed`; the two allowed same-repository cases pass, all three fork
 
 - [ ] **Step 5: Prove teeth by neutering only the repository comparison**
 
-Temporarily change `if [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then` to `if false; then`, rerun the focused regression, and verify the fork test cases fail because the mutated script unexpectedly exits successfully with status `0`. Restore the exact guarded workflow and rerun the focused regression to `8 passed`.
+Temporarily change `if [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then` to `if false; then`, rerun the focused regression, and verify `3 failed, 5 passed`: the two allowed-name fork scripts unexpectedly exit successfully with status `0`, while the disallowed fork exits `1` for the wrong branch-first reason and never emits the required repository diagnostic. Restore the exact guarded workflow and rerun the focused regression to `8 passed`.
 
 - [ ] **Step 6: Run host verification**
 
