@@ -43,7 +43,7 @@ VoiceOver must encounter `Add to list`, then `Copy ID`; activation announces suc
 
 ## R16 proof-absence record
 
-The filled `Seen` control in these frames reports an ON state under R16; it is not a filled action. The render preserves A2's shipped R15 morphology—tonal means available, filled means on, and quiet means a momentary verb—so it introduces no filled action beside the state cluster. **this surface does not pair a filled action with a state cluster; the R16 proof obligation travels to the first surface that does.**
+The filled `Seen` control in these frames reports an ON state under R16; it is not a filled action. The render preserves A2's shipped R15 morphology—tonal means available, filled means on, and quiet means a momentary verb—so it introduces no filled action beside the state cluster. **This surface does not pair a filled action with a state cluster; the R16 proof obligation travels to the first surface that does.**
 
 | Default menu | Default confirmation |
 |---|---|
