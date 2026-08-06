@@ -2,7 +2,7 @@
 
 Issue: #454
 
-Status: proposed; awaiting planner ruling before implementation
+Status: approved by planner on 2026-08-06
 
 ## Purpose
 
@@ -52,7 +52,7 @@ day.
 This is the recommended design. Each layer owns a distinct responsibility:
 the view prevents invalid input and the database preserves the invariant.
 
-## Proposed ruling
+## Ruling
 
 Adopt option 3.
 
@@ -108,6 +108,10 @@ will prove:
 2. tomorrow throws `futureVisitDate`; and
 3. the rejected write leaves both `visited_at` and `visit_order` unchanged.
 
+A separate boundary fixture uses a non-UTC time zone at an instant where the
+local and UTC dates differ. It proves the target is classified against the
+injected clock's day in the supplied calendar, not against the UTC date.
+
 Removing the database guard must make the tomorrow case write successfully
 and fail the regression. Expectations are literal fixture dates and stored
 row values; no source-text assertion or mock is used.
@@ -131,4 +135,3 @@ After implementation:
 6. run one fresh codex1 host release gate with
    `MT_GATE_MAX_CONCURRENT=3`, recording Release/build-for-testing status,
    exact app/unit and UI counts, artifact lifecycle, and final seat status.
-
