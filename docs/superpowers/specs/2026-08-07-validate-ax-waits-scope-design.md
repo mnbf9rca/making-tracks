@@ -26,7 +26,8 @@ The validator remains a bounded lexical source-policy check. It does not become 
 3. A named constant fixes the lookahead at five physical lines. Its comment cites #417 and states
    that changing the horizon requires a new ruling.
 4. Within that horizon the scanner skips blank lines and full-line `//` comments. It stops at the
-   first substantive line, whether or not that line is a matching property assertion.
+   first substantive line, whether or not that line is a matching property assertion. Line-comment
+   text never participates in query counting or balanced assertion matching.
 5. A matching `label` or `value` assertion beginning on that first substantive line is reported
    against the wait line. The scanner reads a balanced `XCTAssertEqual` call so a direct assertion
    may span multiple lines; its first line still must fall inside the five-line horizon. There is no

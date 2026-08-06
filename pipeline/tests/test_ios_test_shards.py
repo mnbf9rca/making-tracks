@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -302,6 +303,73 @@ XCTAssertEqual(app.buttons["active"].label, "Ready")
     assert result.returncode == 0, result.stderr
 
 
+def test_decoy_accessibility_wait_validation_ignores_commented_multiline_wait(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(
+    // app.buttons["active"].waitForExistence(timeout: 5)
+    unrelatedCondition
+)
+XCTAssertEqual(app.buttons["active"].label, "Ready")
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_decoy_accessibility_wait_validation_ignores_commented_property_poison(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.buttons[expected].waitForExistence(timeout: 5))
+XCTAssertEqual(
+    // app.buttons[other].label was the old oracle
+    app.buttons[expected].label,
+    "Ready"
+)
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "expected" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_ignores_commented_property_only(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.buttons[expected].waitForExistence(timeout: 5))
+XCTAssertEqual(
+    // app.buttons[expected].label is intentionally not the oracle
+    unrelatedLabel,
+    "Ready"
+)
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_decoy_accessibility_wait_validation_ignores_trailing_comment_queries(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        'let ready = true // app.buttons["stale"]\n',
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "matched no supported accessibility queries" in result.stderr
+
+
 def test_decoy_accessibility_wait_validation_accepts_property_specific_wait(tmp_path):
     source = tmp_path / "MakingTracksCoreLoopUITests.swift"
     source.write_text(
@@ -325,7 +393,17 @@ def test_decoy_accessibility_wait_validation_accepts_property_specific_wait(tmp_
 
 def test_ios_gate_runs_ax_wait_validation_and_focused_pytest():
     workflow = (REPO_ROOT / ".github" / "workflows" / "ios-gate.yml").read_text(encoding="utf-8")
+    job_match = re.search(
+        r"^  ios-gate-build:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        workflow,
+        flags=re.MULTILINE | re.DOTALL,
+    )
 
+    assert job_match is not None
+    ios_gate_job = job_match.group("body")
+    assert "  pull_request:\n" in workflow
+    assert "  workflow_dispatch:\n" in workflow
+    assert "\n    if:" not in ios_gate_job
     assert "python3 scripts/ios-test-shards.py validate-ax-waits" in workflow
     assert '      - "pipeline/tests/test_ios_test_shards.py"' in workflow
     assert """      - uses: astral-sh/setup-uv@v9.0.0

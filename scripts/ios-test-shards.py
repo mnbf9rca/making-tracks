@@ -97,9 +97,27 @@ def command_validate_static(args: argparse.Namespace) -> int:
     return 0
 
 
+def strip_swift_line_comment(line: str) -> str:
+    in_string = False
+    escaped = False
+    for char_index, char in enumerate(line):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "/" and char_index + 1 < len(line) and line[char_index + 1] == "/":
+            return line[:char_index]
+    return line
+
+
 def is_blank_or_full_line_comment(line: str) -> bool:
-    stripped = line.strip()
-    return not stripped or stripped.startswith("//")
+    return not strip_swift_line_comment(line).strip()
 
 
 def swift_call_statement(lines: list[str], start_index: int) -> tuple[str, int]:
@@ -111,17 +129,9 @@ def swift_call_statement(lines: list[str], start_index: int) -> tuple[str, int]:
     escaped = False
 
     for end_index in range(start_index, len(lines)):
-        line = lines[end_index]
+        line = strip_swift_line_comment(lines[end_index])
         statement_lines.append(line)
-        for char_index, char in enumerate(line):
-            starts_comment = (
-                not in_string
-                and char == "/"
-                and char_index + 1 < len(line)
-                and line[char_index + 1] == "/"
-            )
-            if starts_comment:
-                break
+        for char in line:
             if in_string:
                 if escaped:
                     escaped = False
@@ -146,7 +156,7 @@ def swift_call_statement(lines: list[str], start_index: int) -> tuple[str, int]:
 def accessibility_wait_scan(source: Path) -> tuple[int, list[tuple[int, str, str]]]:
     lines = source.read_text(encoding="utf-8").splitlines()
     query_count = sum(
-        len(AX_ELEMENT_QUERY_RE.findall(line))
+        len(AX_ELEMENT_QUERY_RE.findall(strip_swift_line_comment(line)))
         for line in lines
         if not is_blank_or_full_line_comment(line)
     )
