@@ -445,7 +445,7 @@ After authorization:
 
 Record exact Release/app/UI counts, warnings, duration, owned result path, and final two-way `FREE` status. Any failure remains unmarked and is copied to `$HOME/Library/Application Support/making-tracks-gates/evidence/546` within the roughly three-day OS window before manual disposition.
 
-- [ ] **Step 3: Commit truthful closeout evidence**
+- [x] **Step 3: Commit truthful closeout evidence**
 
 Update only facts now observed in the #546 task entry, then:
 
@@ -459,7 +459,7 @@ git log -1 --show-signature --format=fuller
 
 If this evidence-only commit follows the gated implementation head, do not claim the host gate covered the evidence commit's prose; state the exact gated head.
 
-- [ ] **Step 4: Push and open a draft PR into `ios`**
+- [x] **Step 4: Push and open a draft PR into `ios`**
 
 ```bash
 git push -u origin HEAD
