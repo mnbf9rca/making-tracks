@@ -53,6 +53,7 @@ Format: one line per transition, newest last:
 - 2026-08-06T16:18Z codex3 #375 claimed — planner-assigned Copy ID action; issue classified `enhancement` + `requires-mockups`; #454's exception is system-controlled availability only, so implementation waits for the standard mockup validation and Rob ruling
 - 2026-08-06T16:18Z codex3 #375 branch — `fix-375-copy-id-action` from fresh `origin/ios` `7a3fa31`; isolated worktree `.worktrees/fix-375-copy-id-action`; seat `codex3`
 - 2026-08-06T16:55Z codex3 #375 ruled/validated — Rob selected the in-row flash; public UIKit feasibility passed; reviewer validated exact published design head `1b38164` with no findings and no further Rob roundtrip; production proceeds TDD with the existing More/Add-to-list UI routes explicitly re-proven
+- 2026-08-06T17:22Z codex3 #375 focused implementation green — signed code head `f5bd848`; controller, menu-content, mounted-header, stable accessibility-identity, and live Copy flash/reset coverage all demonstrated RED before GREEN; live test re-proves both existing Add-to-list navigation and Copy ID → disabled Copied → timed dismissal → reset; AppShell 220/220 and host Swift package 518/518 pass with 0 failures; final full gate and independent review remain
 
 ## Done (pre-phase)
 
