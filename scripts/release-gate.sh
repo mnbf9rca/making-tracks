@@ -256,8 +256,9 @@ validate_current_owned_run() {
   local current_parent_canonical
 
   [ "$OWNS_ARTIFACT_RUN" = "true" ] || return 0
-  [ -d "$RUN_DIR" ] && [ ! -L "$RUN_DIR" ] ||
+  if [ ! -d "$RUN_DIR" ] || [ -L "$RUN_DIR" ]; then
     refuse "owned release-gate run is no longer a real directory: $RUN_DIR"
+  fi
   current_canonical="$(canonical_directory "$RUN_DIR")" ||
     refuse "could not canonicalize owned release-gate run: $RUN_DIR"
   current_parent_canonical="$(canonical_directory "$(dirname "$current_canonical")")" ||
@@ -295,8 +296,9 @@ prune_successful_artifacts() {
   local now
 
   validate_current_owned_run
-  [ -d "$RUNS_ROOT" ] && [ ! -L "$RUNS_ROOT" ] ||
+  if [ ! -d "$RUNS_ROOT" ] || [ -L "$RUNS_ROOT" ]; then
     refuse "release-gate runs root became unsafe before cleanup: $RUNS_ROOT"
+  fi
   [ "$(canonical_directory "$RUNS_ROOT")" = "$RUNS_ROOT_CANONICAL" ] ||
     refuse "release-gate runs root changed before cleanup: $RUNS_ROOT"
   now="$(gate_now_seconds)"
@@ -308,7 +310,9 @@ prune_successful_artifacts() {
     [ "$candidate" != "$RUN_DIR" ] || continue
     candidate_basename="$(basename "$candidate")"
     [[ "$candidate_basename" =~ ^run-[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] || continue
-    [ -d "$candidate" ] && [ ! -L "$candidate" ] || continue
+    if [ ! -d "$candidate" ] || [ -L "$candidate" ]; then
+      continue
+    fi
     candidate_canonical="$(canonical_directory "$candidate")" || continue
     candidate_parent_canonical="$(canonical_directory "$(dirname "$candidate_canonical")")" || continue
     [ "$candidate_parent_canonical" = "$RUNS_ROOT_CANONICAL" ] || continue
