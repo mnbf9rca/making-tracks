@@ -409,7 +409,7 @@ Use the project-required independent agents on the complete diff with non-overla
 
 Classify findings as Critical/Important/Minor. Fix all Critical and Important findings with RED tests when behavioral; justify any declined Minor finding concretely. Rerun all host checks after fixes and obtain re-review of changed findings.
 
-- [ ] **Step 4: Run Sourcery and address actionable findings**
+- [x] **Step 4: Run Sourcery and address actionable findings**
 
 Run the repository's required Sourcery review on the complete branch diff. Save its output in durable evidence storage if needed, address actionable findings, and rerun host verification. If the service is unavailable, record the exact command/error and planner-approved disposition; do not silently omit the gate.
 
@@ -422,7 +422,7 @@ Run the repository's required Sourcery review on the complete branch diff. Save 
 - Modify after evidence: `docs/superpowers/phases/pre-phase/tasks.md`
 - External: GitHub issue #546 and the draft PR into `ios`
 
-- [ ] **Step 1: Request and wait for the codex3 gate window**
+- [x] **Step 1: Request and wait for the codex3 gate window**
 
 Send the planner the exact signed head, host-test/ShellCheck evidence, review disposition, and command requested:
 
@@ -433,7 +433,7 @@ Send the planner the exact signed head, host-test/ShellCheck evidence, review di
 
 Do not infer availability from lock files and do not launch until the planner explicitly confirms the #600 cap-3 guard gate has released the shared slot.
 
-- [ ] **Step 2: Run the authoritative gate at the exact reviewed head**
+- [x] **Step 2: Run the authoritative gate at the exact reviewed head**
 
 After authorization:
 
