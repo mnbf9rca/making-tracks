@@ -5340,6 +5340,63 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testPlaceCardMoreMenuIdleContentPreservesOrderAndIdentifiers() throws {
+        let menu = PlaceCardMoreMenuContent.menu(
+            state: .idle,
+            onAddToList: {},
+            onCopyID: {}
+        )
+        let actions = try menu.children.map { element in
+            try XCTUnwrap(element as? UIAction)
+        }
+
+        XCTAssertEqual(actions.map(\.title), ["Add to list", "Copy ID"])
+        XCTAssertEqual(
+            actions.map(\.identifier),
+            [
+                UIAction.Identifier("place-card.add-to-list"),
+                UIAction.Identifier("place-card.copy-id"),
+            ]
+        )
+        XCTAssertFalse(actions[0].attributes.contains(.keepsMenuPresented))
+        XCTAssertTrue(actions[1].attributes.contains(.keepsMenuPresented))
+        XCTAssertFalse(actions[1].attributes.contains(.disabled))
+    }
+
+    @MainActor
+    func testPlaceCardMoreMenuCopiedContentKeepsAddFirstAndDisablesConfirmation() throws {
+        let menu = PlaceCardMoreMenuContent.menu(
+            state: .copied,
+            onAddToList: {},
+            onCopyID: {}
+        )
+        let actions = try menu.children.map { element in
+            try XCTUnwrap(element as? UIAction)
+        }
+        let copied = actions[1]
+
+        XCTAssertEqual(actions.map(\.title), ["Add to list", "Copied"])
+        XCTAssertEqual(actions[0].identifier, UIAction.Identifier("place-card.add-to-list"))
+        XCTAssertEqual(copied.identifier, UIAction.Identifier("place-card.copy-id"))
+        XCTAssertTrue(copied.attributes.contains(.disabled))
+        XCTAssertTrue(copied.attributes.contains(.keepsMenuPresented))
+        XCTAssertTrue(copied.image?.isEqual(UIImage(systemName: "checkmark")) == true)
+    }
+
+    @MainActor
+    func testPlaceCardMoreMenuButtonRetainsRuledMoreGlyph() {
+        let button = PlaceCardMoreMenuButton(
+            placeID: "mt1_glyph",
+            onAddToList: {}
+        )
+
+        XCTAssertEqual(
+            descendants(of: PlaceCardMoreIconGlyph.self, in: button.body).count,
+            1
+        )
+    }
+
+    @MainActor
     func testCopyIDConfirmationCopiesRawPayloadAndAnnouncesBeforeCopiedState() {
         let delay = ManualConfirmationDelay()
         var events: [String] = []
