@@ -1644,10 +1644,26 @@ def test_build_place_images_retries_cached_transient_reject(tmp_path, monkeypatc
         }
 
     monkeypatch.setattr(images, "fetch_commons_imageinfo_batch", fake_imageinfo)
+    downloads = []
+
+    def fake_download(url, dest, **_kwargs):
+        downloads.append(url)
+        payload = b"raw-image"
+        Path(dest).write_bytes(payload)
+        return images.fetch.ConditionalFetchResult(
+            status="downloaded",
+            size=len(payload),
+            sha256=hashlib.sha256(payload).hexdigest(),
+            bytes_downloaded=len(payload),
+        )
+
+    monkeypatch.setattr(images.fetch, "conditional_get_to_file", fake_download)
     monkeypatch.setattr(
         images.fetch,
         "get_to_file",
-        lambda _url, dest, **_kwargs: Path(dest).write_bytes(b"raw-image"),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("image downloads must use conditional_get_to_file")
+        ),
     )
     monkeypatch.setattr(
         images,
@@ -1659,6 +1675,9 @@ def test_build_place_images_retries_cached_transient_reject(tmp_path, monkeypatc
 
     assert [place_image.place_id for place_image in out] == [candidate.place_id]
     assert metadata_calls == [["Fort.jpg"]]
+    assert downloads == [
+        "https://commons.wikimedia.org/wiki/Special:FilePath/Fort.jpg?width=768"
+    ]
 
 
 def test_build_place_images_does_not_cache_batch_fetch_exception(tmp_path, monkeypatch):
@@ -1781,17 +1800,36 @@ def test_build_place_images_records_decode_failure_without_aborting(tmp_path, mo
         },
     )
 
-    def fake_download(url, dest, **kwargs):
-        Path(dest).write_bytes(b"raw-image")
-        return 9
+    downloads = []
+
+    def fake_download(url, dest, **_kwargs):
+        downloads.append(url)
+        payload = b"raw-image"
+        Path(dest).write_bytes(payload)
+        return images.fetch.ConditionalFetchResult(
+            status="downloaded",
+            size=len(payload),
+            sha256=hashlib.sha256(payload).hexdigest(),
+            bytes_downloaded=len(payload),
+        )
 
     def fail_transcode(path):
         raise ValueError("unsupported image format: 'GIF'")
 
-    monkeypatch.setattr(images.fetch, "get_to_file", fake_download)
+    monkeypatch.setattr(images.fetch, "conditional_get_to_file", fake_download)
+    monkeypatch.setattr(
+        images.fetch,
+        "get_to_file",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("image downloads must use conditional_get_to_file")
+        ),
+    )
     monkeypatch.setattr(images, "transcode_to_webp_thumb", fail_transcode)
 
     assert images.build_place_images([candidate], cache_dir=tmp_path) == []
+    assert downloads == [
+        "https://commons.wikimedia.org/wiki/Special:FilePath/Fort.jpg?width=768"
+    ]
     reject = json.loads(
         (tmp_path / "rejects/mt1_00000000000000000000000001.json").read_text()
     )
