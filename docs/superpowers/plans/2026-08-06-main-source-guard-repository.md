@@ -187,11 +187,11 @@ Run:
 /Users/rob/git/making-tracks/.venv/bin/pytest tests/test_main_source_guard_workflow.py -v
 ```
 
-Expected: `6 passed`; the two allowed same-repository cases pass, both fork cases fail for repository identity before branch evaluation, the disallowed same-repository branch fails the branch allowlist, and the context-binding test passes.
+Expected: `8 passed`; the two allowed same-repository cases pass, all three fork cases fail for repository identity before branch evaluation, the disallowed same-repository branch fails the branch allowlist, and the context-binding and non-skippable-enforcement tests pass.
 
 - [ ] **Step 5: Prove teeth by neutering only the repository comparison**
 
-Temporarily change `if [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then` to `if false; then`, rerun the focused regression, and verify the two fork parameters fail because their shell status becomes `0`. Restore the exact guarded workflow and rerun the focused regression to `6 passed`.
+Temporarily change `if [ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]; then` to `if false; then`, rerun the focused regression, and verify the fork test cases fail because the mutated script unexpectedly exits successfully with status `0`. Restore the exact guarded workflow and rerun the focused regression to `8 passed`.
 
 - [ ] **Step 6: Run host verification**
 
@@ -203,7 +203,7 @@ git diff --check
 git status --short
 ```
 
-Expected: the environment-independent contract baseline remains `168 passed`; the focused workflow suite remains `6 passed`; `git diff --check` is silent. Record separately that full contract collection is currently unavailable in the shared runner because `hatchling` is not installed; do not misclassify that environment dependency as a repository failure.
+Expected: the complete contract suite remains `173 passed` when `hatchling` is supplied through an isolated test target; the focused workflow suite remains `8 passed`; `git diff --check` is silent. Do not modify the shared runner environment to supply the missing build backend.
 
 - [ ] **Step 7: Commit the implementation**
 

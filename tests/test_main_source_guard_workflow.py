@@ -124,10 +124,12 @@ def _guard_job_conditions() -> list[str]:
 
 
 def test_guard_binds_repository_contexts_through_environment() -> None:
-    env, _ = _guard_step()
+    env, script = _guard_step()
 
+    assert env["HEAD_REF"] == "${{ github.head_ref }}"
     assert env["HEAD_REPOSITORY"] == "${{ github.event.pull_request.head.repo.full_name }}"
     assert env["BASE_REPOSITORY"] == "${{ github.repository }}"
+    assert "github." not in script
 
 
 def test_guard_job_and_step_cannot_skip_enforcement() -> None:
