@@ -91,7 +91,7 @@ Prune failures are reported as explicit cleanup warnings and do not rewrite the 
 - A symlinked gate root, `runs` root, run directory, or marker fails validation; cleanup never follows it.
 - Only direct children are candidates; nested descendants and similarly prefixed names are ignored.
 - Legacy fixed-path bundles remain untouched and require operator disposition.
-- Failed/unmarked run directories are operator-deleted only after evidence is extracted or copied to the durable convention under `~/Library/Caches/making-tracks-gates/evidence/`.
+- The gate never automatically deletes failed or unmarked run directories. Because those directories remain under `/private/tmp`, macOS `com.apple.tmp_cleaner` can still remove their files after access, modification, and change times are all older than roughly three days. Operators must extract or copy evidence to the durable convention under `~/Library/Caches/making-tracks-gates/evidence/` within that OS window; this is an operator SLA, not gate behavior.
 - DerivedData pruning remains separate. #612's persistent cache roots and temporary-path guards are unchanged.
 
 ## Error handling and recovery
@@ -120,6 +120,6 @@ Each cleanup assertion targets filesystem state produced through the production 
 
 ## Documentation changes
 
-`docs/ios-gate-ledger.md` will replace the inherited one-line result-bundle claim with the local ownership lifecycle, 24-hour threshold, operator recovery steps, durable-evidence convention, and disk-budget rationale. It will cite the two old-machine ENOSPC incidents without inventing measurements for the unquantified incident.
+`docs/ios-gate-ledger.md` will replace the inherited one-line result-bundle claim with the local ownership lifecycle, 24-hour threshold, operator recovery steps, durable-evidence convention, and disk-budget rationale. It will explicitly distinguish the gate's success-only cleanup from macOS `com.apple.tmp_cleaner` and state the operator SLA to extract or copy failure evidence within the roughly three-day OS cleanup window. It will cite the two old-machine ENOSPC incidents without inventing measurements for the unquantified incident.
 
 No production app, workflow, CI upload, simulator destination, semaphore, or lock-root behavior changes.
