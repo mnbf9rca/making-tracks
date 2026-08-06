@@ -2138,6 +2138,22 @@ echo "release-gate destination contract:"
 
 FAKE_BIN="$TMP/fake-bin"
 XCODEBUILD_LOG="$TMP/xcodebuild.log"
+XCRUN_LOG="$TMP/xcrun.log"
+RELEASE_FIXTURE_REPO="$TMP/release-fixture-repo"
+RELEASE_FIXTURE_RESOLVED="$RELEASE_FIXTURE_REPO/ios/Package.resolved"
+RELEASE_FIXTURE_PBXPROJ="$RELEASE_FIXTURE_REPO/ios/App/MakingTracks.xcodeproj/project.pbxproj"
+
+reset_release_fixture_repo() {
+  rm -rf "$RELEASE_FIXTURE_REPO"
+  mkdir -p \
+    "$(dirname "$RELEASE_FIXTURE_RESOLVED")" \
+    "$(dirname "$RELEASE_FIXTURE_PBXPROJ")"
+  cp "$HERE/../ios/Package.resolved" "$RELEASE_FIXTURE_RESOLVED"
+  cp "$HERE/../ios/App/MakingTracks.xcodeproj/project.pbxproj" \
+    "$RELEASE_FIXTURE_PBXPROJ"
+}
+
+reset_release_fixture_repo
 mkdir -p "$FAKE_BIN"
 # shellcheck disable=SC2016 # These lines are the literal fake-git program.
 printf '%s\n' \
@@ -2146,17 +2162,26 @@ printf '%s\n' \
   '  "rev-parse --show-toplevel") printf "%s\n" "$MT_TEST_REPO_ROOT" ;;' \
   '  "fetch --quiet") exit 0 ;;' \
   '  "merge-base --is-ancestor") exit 0 ;;' \
+  '  "ls-files --error-unmatch") [ "${MT_TEST_GIT_TRACKED:-1}" = "1" ] ;;' \
+  '  "diff --quiet") [ "${MT_TEST_GIT_UNSTAGED_DIRTY:-0}" = "0" ] ;;' \
+  '  "diff --cached") [ "${MT_TEST_GIT_STAGED_DIRTY:-0}" = "0" ] ;;' \
   '  *) exit 0 ;;' \
   'esac' >"$FAKE_BIN/git"
+# shellcheck disable=SC2016 # These lines are the literal fake-xcrun program.
 printf '%s\n' \
   '#!/usr/bin/env bash' \
+  '[ -z "${MT_TEST_XCRUN_LOG:-}" ] || printf "%s\n" "$*" >>"$MT_TEST_XCRUN_LOG"' \
   'exit 0' >"$FAKE_BIN/xcrun"
 # shellcheck disable=SC2016 # Expanded when the fake xcodebuild runs.
 printf '%s\n' \
   '#!/usr/bin/env bash' \
   'printf "%s\n" "$*" >>"$MT_TEST_XCODEBUILD_LOG"' \
   'test_status=0' \
+  'if [ "${MT_TEST_XCODEBUILD_MUTATE_RESOLVED:-0}" = "1" ]; then' \
+  '  printf "%s\n" mutated >>"$MT_TEST_PACKAGE_RESOLVED"' \
+  'fi' \
   'case " $* " in *" test-without-building "*) test_status="${MT_TEST_XCODEBUILD_TEST_STATUS:-0}" ;; esac' \
+  'case " $* " in *" build "*) test_status="${MT_TEST_XCODEBUILD_BUILD_STATUS:-$test_status}" ;; esac' \
   'while [ "$#" -gt 0 ]; do' \
   '  case "$1" in' \
   '    -resultBundlePath)' \
@@ -2181,8 +2206,10 @@ run_artifact_gate() {
 
   env "$@" \
     PATH="$FAKE_BIN:$PATH" \
-    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_REPO_ROOT="$RELEASE_FIXTURE_REPO" \
+    MT_TEST_PACKAGE_RESOLVED="$RELEASE_FIXTURE_RESOLVED" \
     MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_TEST_XCRUN_LOG="$XCRUN_LOG" \
     MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK=1 \
     MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
@@ -2199,8 +2226,10 @@ run_artifact_gate_with_system_bash() {
 
   env "$@" \
     PATH="$FAKE_BIN:/bin:/usr/bin:/usr/sbin:/sbin" \
-    MT_TEST_REPO_ROOT="$HERE/.." \
+    MT_TEST_REPO_ROOT="$RELEASE_FIXTURE_REPO" \
+    MT_TEST_PACKAGE_RESOLVED="$RELEASE_FIXTURE_RESOLVED" \
     MT_TEST_XCODEBUILD_LOG="$XCODEBUILD_LOG" \
+    MT_TEST_XCRUN_LOG="$XCRUN_LOG" \
     MT_SIM_LOCK_TEST_MODE=1 \
     MT_SIM_LOCK=1 \
     MT_SIM_LOCK_UDID="$RELEASE_UDID_A" \
@@ -2210,6 +2239,101 @@ run_artifact_gate_with_system_bash() {
     MT_RELEASE_GATE_MODE="$mode" \
     /bin/bash "$RELEASE_GATE"
 }
+
+check_package_resolution_preflight() {
+  local gate_out
+  local gate_rc
+  local name="$1"
+  shift
+
+  : >"$XCODEBUILD_LOG"
+  : >"$XCRUN_LOG"
+  set +e
+  gate_out="$(run_artifact_gate build "$@" 2>&1)"
+  gate_rc=$?
+  set -e
+  if [ "$gate_rc" -ne 0 ] &&
+     echo "$gate_out" | grep -Fq 'ios/Package.resolved' &&
+     echo "$gate_out" | grep -Fq \
+       'commit the intentional update, or restore it from HEAD' &&
+     [ ! -s "$XCODEBUILD_LOG" ] &&
+     [ ! -s "$XCRUN_LOG" ]; then
+    record_ok "$name"
+  else
+    record_fail "$name" \
+      "status=$gate_rc xcode=$(wc -l <"$XCODEBUILD_LOG" | tr -d '[:space:]') sim=$(wc -l <"$XCRUN_LOG" | tr -d '[:space:]') output='$(echo "$gate_out" | tail -1)'"
+  fi
+  reset_release_fixture_repo
+}
+
+rm -f "$RELEASE_FIXTURE_RESOLVED"
+check_package_resolution_preflight \
+  "release gate refuses an absent Package.resolved before Xcode"
+
+rm -f "$RELEASE_FIXTURE_RESOLVED"
+ln -s "$HERE/../ios/Package.resolved" "$RELEASE_FIXTURE_RESOLVED"
+check_package_resolution_preflight \
+  "release gate refuses a symlinked Package.resolved before Xcode"
+
+check_package_resolution_preflight \
+  "release gate refuses an untracked Package.resolved before Xcode" \
+  MT_TEST_GIT_TRACKED=0
+
+check_package_resolution_preflight \
+  "release gate refuses an unstaged Package.resolved before Xcode" \
+  MT_TEST_GIT_UNSTAGED_DIRTY=1
+
+check_package_resolution_preflight \
+  "release gate refuses a staged Package.resolved before Xcode" \
+  MT_TEST_GIT_STAGED_DIRTY=1
+
+rm -rf "$RELEASE_RUN_DIR_A"
+: >"$XCODEBUILD_LOG"
+: >"$XCRUN_LOG"
+set +e
+mutating_resolution_out="$(
+  run_artifact_gate full MT_TEST_XCODEBUILD_MUTATE_RESOLVED=1 2>&1
+)"
+mutating_resolution_rc=$?
+set -e
+mutating_resolution_calls="$(wc -l <"$XCODEBUILD_LOG" | tr -d '[:space:]')"
+mutating_resolution_success=0
+for mutating_resolution_run in "$RELEASE_RUN_DIR_A"/runs/run-*; do
+  [ ! -f "$mutating_resolution_run/.release-gate-success" ] ||
+    mutating_resolution_success=1
+done
+if [ "$mutating_resolution_rc" -ne 0 ] &&
+   [ "$mutating_resolution_calls" = "1" ] &&
+   echo "$mutating_resolution_out" | grep -Fq \
+     'dependency resolution drift' &&
+   [ "$mutating_resolution_success" -eq 0 ]; then
+  record_ok \
+    "release gate rejects a successful Xcode phase that changes Package.resolved"
+else
+  record_fail \
+    "release gate rejects a successful Xcode phase that changes Package.resolved" \
+    "status=$mutating_resolution_rc calls=$mutating_resolution_calls success=$mutating_resolution_success output='$(echo "$mutating_resolution_out" | tail -1)'"
+fi
+reset_release_fixture_repo
+rm -rf "$RELEASE_RUN_DIR_A"
+
+: >"$XCODEBUILD_LOG"
+: >"$XCRUN_LOG"
+set +e
+unchanged_failure_out="$(
+  run_artifact_gate build MT_TEST_XCODEBUILD_BUILD_STATUS=73 2>&1
+)"
+unchanged_failure_rc=$?
+set -e
+if [ "$unchanged_failure_rc" -eq 73 ] &&
+   echo "$unchanged_failure_out" | grep -Fq \
+     'phase end: release build status=73'; then
+  record_ok "release gate preserves an unchanged failing Xcode phase status"
+else
+  record_fail "release gate preserves an unchanged failing Xcode phase status" \
+    "status=$unchanged_failure_rc output='$(echo "$unchanged_failure_out" | tail -1)'"
+fi
+reset_release_fixture_repo
 
 rm -f "$XCODEBUILD_LOG"
 set +e
