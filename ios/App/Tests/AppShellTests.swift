@@ -5340,6 +5340,123 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testCopyIDConfirmationCopiesRawPayloadAndAnnouncesBeforeCopiedState() {
+        let delay = ManualConfirmationDelay()
+        var events: [String] = []
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { events.append("copy:\($0)") },
+            announce: { events.append("announce:\($0)") },
+            setState: {
+                events.append($0 == .copied ? "state:copied" : "state:idle")
+            },
+            delay: { await delay.wait() },
+            dismiss: { events.append("dismiss") }
+        )
+        let rawPlaceID = "mt1_01RAW_identifier-without-a-newline"
+
+        controller.activate(placeID: rawPlaceID)
+
+        XCTAssertEqual(
+            events,
+            [
+                "copy:\(rawPlaceID)",
+                "announce:Place ID copied.",
+                "state:copied",
+            ]
+        )
+        controller.cancel()
+        delay.resumeAll()
+    }
+
+    @MainActor
+    func testCopyIDConfirmationWaitsForInjectedDelayBeforeDismissAndReset() async {
+        let delay = ManualConfirmationDelay()
+        let delayStarted = expectation(description: "confirmation delay started")
+        let dismissed = expectation(description: "menu dismissed")
+        var states: [PlaceCardCopyIDConfirmationState] = []
+        var dismissCount = 0
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { _ in },
+            announce: { _ in },
+            setState: { states.append($0) },
+            delay: {
+                delayStarted.fulfill()
+                await delay.wait()
+            },
+            dismiss: {
+                dismissCount += 1
+                dismissed.fulfill()
+            }
+        )
+
+        controller.activate(placeID: "mt1_delay")
+        await fulfillment(of: [delayStarted])
+        XCTAssertEqual(dismissCount, 0)
+        XCTAssertEqual(states, [.copied])
+
+        delay.resumeAll()
+        await fulfillment(of: [dismissed])
+
+        XCTAssertEqual(dismissCount, 1)
+        XCTAssertEqual(states, [.copied, .idle])
+    }
+
+    @MainActor
+    func testCopyIDConfirmationCancelPreventsStaleDismissal() async {
+        let delay = ManualConfirmationDelay()
+        let delayStarted = expectation(description: "confirmation delay started")
+        let delayReturned = expectation(description: "cancelled delay returned")
+        var states: [PlaceCardCopyIDConfirmationState] = []
+        var dismissCount = 0
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { _ in },
+            announce: { _ in },
+            setState: { states.append($0) },
+            delay: {
+                delayStarted.fulfill()
+                await delay.wait()
+                delayReturned.fulfill()
+            },
+            dismiss: { dismissCount += 1 }
+        )
+
+        controller.activate(placeID: "mt1_cancelled")
+        await fulfillment(of: [delayStarted])
+        controller.cancel()
+        delay.resumeAll()
+        await fulfillment(of: [delayReturned])
+        await Task.yield()
+
+        XCTAssertEqual(dismissCount, 0)
+        XCTAssertEqual(states, [.copied, .idle])
+    }
+
+    @MainActor
+    func testCopyIDConfirmationIgnoresSecondActivationWhileConfirming() async {
+        let delay = ManualConfirmationDelay()
+        let delayStarted = expectation(description: "confirmation delay started")
+        var copiedPayloads: [String] = []
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { copiedPayloads.append($0) },
+            announce: { _ in },
+            setState: { _ in },
+            delay: {
+                delayStarted.fulfill()
+                await delay.wait()
+            },
+            dismiss: {}
+        )
+
+        controller.activate(placeID: "mt1_first")
+        await fulfillment(of: [delayStarted])
+        controller.activate(placeID: "mt1_second")
+
+        XCTAssertEqual(copiedPayloads, ["mt1_first"])
+        controller.cancel()
+        delay.resumeAll()
+    }
+
+    @MainActor
     private func makeCoordinator() -> MLNMapViewRepresentable.Coordinator {
         MLNMapViewRepresentable.Coordinator(
             onCameraIdle: { _, _ in },
@@ -5351,6 +5468,25 @@ final class AppShellTests: XCTestCase {
             onStyleWillReload: {},
             onMapLoadFailed: {}
         )
+    }
+}
+
+@MainActor
+private final class ManualConfirmationDelay {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func resumeAll() {
+        let pending = continuations
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
     }
 }
 
