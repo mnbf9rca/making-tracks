@@ -740,6 +740,26 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
+    private func assertAccessibilityInteractiveTarget(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let calculationEpsilon: CGFloat = 0.001
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width,
+            52 - calculationEpsilon,
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height,
+            52 - calculationEpsilon,
+            file: file,
+            line: line
+        )
+    }
+
     private func assertContainedInAppFrame(
         _ element: XCUIElement,
         in app: XCUIApplication,
@@ -1907,13 +1927,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         let moreButton = app.buttons["place-card.more"]
         XCTAssertTrue(moreButton.waitForExistence(timeout: 5))
-        let minimumTargetPredicate = NSPredicate { object, _ in
+        let accessibilityTargetPredicate = NSPredicate { object, _ in
             guard let element = object as? XCUIElement else { return false }
-            return element.frame.width >= 43.999
-                && element.frame.height >= 43.999
+            return element.frame.width >= 51.999
+                && element.frame.height >= 51.999
         }
         let minimumTargetExpectation = XCTNSPredicateExpectation(
-            predicate: minimumTargetPredicate,
+            predicate: accessibilityTargetPredicate,
             object: moreButton
         )
         XCTAssertEqual(
@@ -1921,7 +1941,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
             .completed
         )
         print("PLACE_CARD_COPY_ID_AX_MORE frame=\(moreButton.frame) app=\(app.frame)")
-        assertMinimumInteractiveTarget(moreButton)
+        assertAccessibilityInteractiveTarget(moreButton)
         assertContainedInAppFrame(moreButton, in: app)
         moreButton.tap()
 

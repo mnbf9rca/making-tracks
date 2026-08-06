@@ -144,6 +144,8 @@ struct PlaceCardMoreMenuContent {
 }
 
 struct PlaceCardMoreMenuButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let placeID: String
     let onAddToList: () -> Void
 
@@ -159,9 +161,12 @@ struct PlaceCardMoreMenuButton: View {
                 .accessibilityHidden(true)
         }
         // The native sheet presents its content slightly inset and scaled.
-        // Keep the transparent interaction surface large enough to expose a
-        // true 44-point target after that presentation transform.
-        .frame(width: 46, height: 46)
+        // Compensate so the live target remains at least 44pt by default and
+        // retains the ruled 52pt enlargement at accessibility sizes.
+        .frame(
+            width: dynamicTypeSize.isAccessibilitySize ? 55 : 46,
+            height: dynamicTypeSize.isAccessibilitySize ? 55 : 46
+        )
         .contentShape(Rectangle())
     }
 }

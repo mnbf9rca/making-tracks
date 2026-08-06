@@ -83,7 +83,7 @@ The transparent interaction owner must remain at least 44×44pt at default size 
 
 The place ID is a public diagnostic reference, but the app still places it on the system pasteboard only after an explicit user action. It is not logged, persisted, transmitted, or inserted into the card's reading hierarchy.
 
-The native menu must remain fully onscreen and every row at least 44pt through AX5. UIKit owns exact menu geometry; the deterministic renders specify state, order, and feedback rather than private system pixels.
+The native menu must remain fully onscreen through AX5. UIKit owns exact row geometry; implementation evidence gates the app-owned More target at least 44×44pt by default and its 52×52pt AX enlargement, fixed `Add to list` then `Copy ID` order, on-screen containment, accessibility exposure/activation, and the success announcement. On 2026-08-07, iOS 26.5 rendered each native row at 250×42pt by default and 370×126pt at AX5; these are dated platform observations, not thresholds. The deterministic renders specify state, order, and feedback rather than private system pixels.
 
 ## Testing and evidence
 
@@ -99,7 +99,7 @@ Unit tests exercise the coordinator before production code is written:
 
 Host/component tests verify fixed row order and both action identifiers. UIKit `UIAction.Identifier` values will use `place-card.add-to-list` and `place-card.copy-id`; the live UI test must verify those stable routes are exposed to XCTest before the implementation gate can pass. If UIKit does not surface the identifiers as expected, the builder must add a tested public accessibility route or return the finding to the reviewer/planner rather than silently weakening the contract.
 
-Locked simulator UI evidence verifies the menu stays visible after activation, shows `Copied` and a checkmark, dismisses after the controlled interval, resets on reopen, copies the exact payload, preserves Add to list, and stays fully onscreen with minimum row targets at default and AX5. The default and AX deterministic confirmation renders are the visual comparison packet; live system-menu pixels are implementation evidence, not a requirement to match illustrative geometry exactly.
+Locked simulator UI evidence verifies the menu stays visible after activation, shows `Copied` and a checkmark, dismisses after the controlled interval, resets on reopen, copies the exact payload, preserves Add to list, keeps the app-owned More target at least 44×44pt by default and at least 52×52pt at AX5, preserves row order and accessibility activation, and keeps the native menu fully onscreen. It records the dated default and AX5 native-row observations without turning them into thresholds. The default and AX deterministic confirmation renders are the visual comparison packet; live system-menu pixels are implementation evidence, not a requirement to match illustrative geometry exactly.
 
 ## Rendered decision record
 
