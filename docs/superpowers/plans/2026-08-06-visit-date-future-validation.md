@@ -310,15 +310,15 @@ swift test --package-path ios --filter InteractionsTests.testUpdateVisitDateReje
 Expected: each intended regression fails. Restore production after every
 mutation, rerun green, and confirm `git diff` contains no mutation residue.
 
-- [ ] **Step 2: Run repository checks**
+- [x] **Step 2: Run repository checks**
 
 Run the complete Swift package suite, `git diff --check`, the repository agent-law lint named by `AGENTS.md`, and verify the branch still descends from current `origin/ios`. Record exact counts and zero-failure status.
 
-- [ ] **Step 3: Obtain independent adversarial review**
+- [x] **Step 3: Obtain independent adversarial review**
 
 Review the exact signed code head across correctness, time-zone/calendar boundaries, test teeth, Swift concurrency/API scope, UI fidelity, security/privacy, and scope containment. Fix every surviving Critical or Important finding with a fresh RED/GREEN cycle, then re-review the changed head.
 
-- [ ] **Step 4: Run the mandatory fresh host gate**
+- [x] **Step 4: Run the mandatory fresh host gate**
 
 After confirming codex1 is free with the wrapper status command, run exactly:
 
