@@ -13,20 +13,33 @@ struct PlaceCardCopyIDEffects {
     let announce: (String) -> Void
     let sleep: (Duration) async -> Void
 
-    static let live = PlaceCardCopyIDEffects(
-        copy: { placeID in
-            UIPasteboard.general.string = placeID
+    static func live(
+        pasteboard: UIPasteboard = .general,
+        postAccessibility: @escaping (UIAccessibility.Notification, Any?) -> Void = {
+            notification,
+            argument in
+            UIAccessibility.post(notification: notification, argument: argument)
         },
-        announce: { message in
-            UIAccessibility.post(
-                notification: .announcement,
-                argument: message
-            )
-        },
-        sleep: { duration in
-            try? await Task.sleep(for: duration)
-        }
-    )
+        sleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }
+    ) -> PlaceCardCopyIDEffects {
+        system(
+            pasteboard: pasteboard,
+            postAccessibility: postAccessibility,
+            sleep: sleep
+        )
+    }
+
+    static func system(
+        pasteboard: UIPasteboard,
+        postAccessibility: @escaping (UIAccessibility.Notification, Any?) -> Void,
+        sleep: @escaping (Duration) async -> Void
+    ) -> PlaceCardCopyIDEffects {
+        PlaceCardCopyIDEffects(
+            copy: { pasteboard.string = $0 },
+            announce: { postAccessibility(.announcement, $0) },
+            sleep: sleep
+        )
+    }
 }
 
 @MainActor
@@ -206,7 +219,7 @@ final class PlaceCardMoreMenuCoordinator: NSObject {
     init(
         placeID: String,
         onAddToList: @escaping () -> Void,
-        effects: PlaceCardCopyIDEffects = .live
+        effects: PlaceCardCopyIDEffects = .live()
     ) {
         self.placeID = placeID
         self.onAddToList = onAddToList

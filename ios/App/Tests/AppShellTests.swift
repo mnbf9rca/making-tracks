@@ -5446,6 +5446,35 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testPlaceCardCopyIDLiveEffectsComposeExactSystemAdapters() async {
+        let pasteboard = UIPasteboard.withUniqueName()
+        defer { UIPasteboard.remove(withName: pasteboard.name) }
+        var postedNotifications: [UIAccessibility.Notification] = []
+        var postedArguments: [String] = []
+        var sleptDurations: [Duration] = []
+        let effects = PlaceCardCopyIDEffects.live(
+            pasteboard: pasteboard,
+            postAccessibility: { notification, argument in
+                postedNotifications.append(notification)
+                postedArguments.append(argument as? String ?? "not-a-string")
+            },
+            sleep: { sleptDurations.append($0) }
+        )
+
+        effects.copy("mt1_live-RAW_payload-without-a-newline")
+        effects.announce("Place ID copied.")
+        await effects.sleep(.milliseconds(750))
+
+        XCTAssertEqual(
+            pasteboard.string,
+            "mt1_live-RAW_payload-without-a-newline"
+        )
+        XCTAssertEqual(postedNotifications, [.announcement])
+        XCTAssertEqual(postedArguments, ["Place ID copied."])
+        XCTAssertEqual(sleptDurations, [.milliseconds(750)])
+    }
+
+    @MainActor
     func testCopyIDConfirmationCopiesRawPayloadAndAnnouncesBeforeCopiedState() {
         let delay = ManualConfirmationDelay()
         var events: [String] = []

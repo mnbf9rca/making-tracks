@@ -1823,10 +1823,29 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(saveButton.exists)
         XCTAssertTrue(seenButton.exists)
         XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
-        XCTAssertTrue(app.buttons["place-card.more"].exists)
-        app.buttons["place-card.more"].tap()
+        let moreButton = app.buttons["place-card.more"]
+        XCTAssertTrue(moreButton.exists)
+        assertMinimumInteractiveTarget(moreButton)
+        assertContainedInAppFrame(moreButton, in: app)
+        moreButton.tap()
         let addToListButton = app.buttons["place-card.add-to-list"]
+        let initialCopyIDButton = app.buttons["place-card.copy-id"]
         XCTAssertTrue(addToListButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(initialCopyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(addToListButton.label, "Add to list")
+        XCTAssertEqual(initialCopyIDButton.label, "Copy ID")
+        XCTAssertTrue(addToListButton.isEnabled)
+        XCTAssertTrue(initialCopyIDButton.isEnabled)
+        print(
+            "PLACE_CARD_COPY_ID_DEFAULT_ROWS add=\(addToListButton.frame) "
+                + "copy=\(initialCopyIDButton.frame)"
+        )
+        XCTAssertLessThanOrEqual(
+            addToListButton.frame.maxY,
+            initialCopyIDButton.frame.minY + 0.5
+        )
+        assertContainedInAppFrame(addToListButton, in: app)
+        assertContainedInAppFrame(initialCopyIDButton, in: app)
         addToListButton.tap()
         XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
         app.buttons["list-picker.done"].tap()
@@ -1914,6 +1933,10 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertEqual(copyIDButton.label, "Copy ID")
         XCTAssertTrue(addToListButton.isEnabled)
         XCTAssertTrue(copyIDButton.isEnabled)
+        print(
+            "PLACE_CARD_COPY_ID_AX_ROWS add=\(addToListButton.frame) "
+                + "copy=\(copyIDButton.frame)"
+        )
         XCTAssertLessThanOrEqual(
             addToListButton.frame.maxY,
             copyIDButton.frame.minY + 0.5
