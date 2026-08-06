@@ -22,6 +22,7 @@ PBXPROJ="$PROJECT/project.pbxproj"
 SCHEME="MakingTracks"
 PACKAGE_RESOLVED="ios/Package.resolved"
 PACKAGE_RESOLVED_DIGEST=""
+PACKAGE_RESOLUTION_ARGS=(-onlyUsePackageVersionsFromResolvedFile)
 if [ "${GITHUB_ACTIONS:-}" = "true" ] &&
    [ "${MT_RELEASE_GATE_SKIP_LOCK:-}" = "1" ]; then
   DESTINATION_VARIABLE="MT_RELEASE_GATE_CI_DESTINATION"
@@ -483,14 +484,14 @@ run_xcodebuild() {
   shift
 
   if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
-    xcodebuild "$@"
+    xcodebuild "${PACKAGE_RESOLUTION_ARGS[@]}" "$@"
     xcode_status=$?
   else
     command -v xcbeautify >/dev/null 2>&1 ||
       refuse "xcbeautify must be installed for GitHub Actions release-gate logs"
 
     raw_log="$RUN_DIR/$(xcodebuild_log_name "$label")"
-    xcodebuild "$@" 2>&1 | tee "$raw_log" | xcbeautify
+    xcodebuild "${PACKAGE_RESOLUTION_ARGS[@]}" "$@" 2>&1 | tee "$raw_log" | xcbeautify
     xcode_status=$?
   fi
 

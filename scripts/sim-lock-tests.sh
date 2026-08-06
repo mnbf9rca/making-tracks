@@ -2240,6 +2240,20 @@ run_artifact_gate_with_system_bash() {
     /bin/bash "$RELEASE_GATE"
 }
 
+all_xcode_calls_use_committed_resolution() {
+  local expected_calls="$1"
+  local xcode_call
+
+  [ "$(wc -l <"$XCODEBUILD_LOG" | tr -d '[:space:]')" = "$expected_calls" ] ||
+    return 1
+  while IFS= read -r xcode_call; do
+    case " $xcode_call " in
+      *" -onlyUsePackageVersionsFromResolvedFile "*) ;;
+      *) return 1 ;;
+    esac
+  done <"$XCODEBUILD_LOG"
+}
+
 check_package_resolution_preflight() {
   local gate_out
   local gate_rc
@@ -2333,6 +2347,43 @@ else
   record_fail "release gate preserves an unchanged failing Xcode phase status" \
     "status=$unchanged_failure_rc output='$(echo "$unchanged_failure_out" | tail -1)'"
 fi
+reset_release_fixture_repo
+
+rm -rf "$RELEASE_RUN_DIR_A"
+: >"$XCODEBUILD_LOG"
+set +e
+pinned_full_out="$(run_artifact_gate full 2>&1)"
+pinned_full_rc=$?
+set -e
+if [ "$pinned_full_rc" -eq 0 ] &&
+   all_xcode_calls_use_committed_resolution 3; then
+  record_ok "full release gate pins all three Xcode phases to Package.resolved"
+else
+  record_fail "full release gate pins all three Xcode phases to Package.resolved" \
+    "status=$pinned_full_rc calls=$(wc -l <"$XCODEBUILD_LOG" | tr -d '[:space:]') output='$(echo "$pinned_full_out" | tail -1)'"
+fi
+rm -rf "$RELEASE_RUN_DIR_A"
+reset_release_fixture_repo
+
+PINNED_ENUMERATION="$TMP/pinned-enumerated-tests.json"
+rm -f "$PINNED_ENUMERATION"
+: >"$XCODEBUILD_LOG"
+set +e
+pinned_enumeration_out="$(
+  run_artifact_gate enumerate \
+    MT_RELEASE_GATE_ENUMERATED_TESTS_JSON="$PINNED_ENUMERATION" 2>&1
+)"
+pinned_enumeration_rc=$?
+set -e
+if [ "$pinned_enumeration_rc" -eq 0 ] &&
+   [ -f "$PINNED_ENUMERATION" ] &&
+   all_xcode_calls_use_committed_resolution 1; then
+  record_ok "enumeration gate pins Xcode to Package.resolved"
+else
+  record_fail "enumeration gate pins Xcode to Package.resolved" \
+    "status=$pinned_enumeration_rc calls=$(wc -l <"$XCODEBUILD_LOG" | tr -d '[:space:]') output='$(echo "$pinned_enumeration_out" | tail -1)'"
+fi
+rm -f "$PINNED_ENUMERATION"
 reset_release_fixture_repo
 
 rm -f "$XCODEBUILD_LOG"
