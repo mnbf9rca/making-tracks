@@ -137,6 +137,49 @@ def test_decoy_accessibility_wait_validation_flags_simple_variable_switch_select
     assert ".value" in result.stderr
 
 
+def test_decoy_accessibility_wait_validation_flags_multiline_property_assertion(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
+XCTAssertEqual(
+    expectedValue(),
+    app.switches[showHidden].value as? String,
+    "The switch must begin off.",
+    file: #filePath,
+    line: #line
+)
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "showHidden" in result.stderr
+    assert ".value" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_flags_xctest_wait_message_overload(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(
+    app.buttons[identifier].waitForExistence(timeout: timeout()),
+    "The button must appear.",
+    file: #filePath,
+    line: #line
+)
+XCTAssertEqual(expectedLabel(), app.buttons[identifier].label)
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "identifier" in result.stderr
+    assert ".label" in result.stderr
+
+
 def test_decoy_accessibility_wait_validation_detects_fifth_physical_line(tmp_path):
     source = tmp_path / "MakingTracksCoreLoopUITests.swift"
     source.write_text(
@@ -190,11 +233,26 @@ XCTAssertEqual(app.buttons["x"].label, "Y")
     assert result.returncode == 0, result.stderr
 
 
-def test_decoy_accessibility_wait_validation_requires_same_element_and_selector(tmp_path):
+def test_decoy_accessibility_wait_validation_requires_same_element_class(tmp_path):
     source = tmp_path / "MakingTracksCoreLoopUITests.swift"
     source.write_text(
         """XCTAssertTrue(app.buttons["x"].waitForExistence(timeout: 5))
 XCTAssertEqual(app.staticTexts["x"].label, "Y")
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_decoy_accessibility_wait_validation_requires_same_selector_and_stops(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.buttons[expected].waitForExistence(timeout: 5))
+XCTAssertEqual(app.buttons[other].label, "Other")
+XCTAssertEqual(app.buttons[expected].label, "Expected")
 """,
         encoding="utf-8",
     )
@@ -215,6 +273,33 @@ def test_decoy_accessibility_wait_validation_fails_when_scanner_matches_no_queri
 
     assert result.returncode == 1
     assert "matched no supported accessibility queries" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_ignores_comment_only_queries(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        '// XCTAssertTrue(app.buttons["stale"].waitForExistence(timeout: 5))\n',
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "matched no supported accessibility queries" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_ignores_commented_wait_anchor(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """// XCTAssertTrue(app.buttons["active"].waitForExistence(timeout: 5))
+XCTAssertEqual(app.buttons["active"].label, "Ready")
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_decoy_accessibility_wait_validation_accepts_property_specific_wait(tmp_path):
@@ -242,8 +327,12 @@ def test_ios_gate_runs_ax_wait_validation_and_focused_pytest():
     workflow = (REPO_ROOT / ".github" / "workflows" / "ios-gate.yml").read_text(encoding="utf-8")
 
     assert "python3 scripts/ios-test-shards.py validate-ax-waits" in workflow
-    assert "astral-sh/setup-uv@v9.0.0" in workflow
-    assert "pytest pipeline/tests/test_ios_test_shards.py" in workflow
+    assert '      - "pipeline/tests/test_ios_test_shards.py"' in workflow
+    assert """      - uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Test iOS shard tooling
+        run: uv run --package making-tracks-pipeline --extra dev pytest pipeline/tests/test_ios_test_shards.py
+""" in workflow
 
 
 def test_write_only_testing_outputs_full_xcode_identifiers(tmp_path):

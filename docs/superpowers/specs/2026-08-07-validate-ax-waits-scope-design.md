@@ -12,8 +12,8 @@
 its implementation provides. A blank or comment line evades it, and equivalent `staticTexts` and
 `switches` decoys remain outside its scope.
 
-The current `ios` tree contains seven decoys in the widened scope: six same-selector
-`staticTexts` existence/label pairs and one same-selector `switches` existence/value pair. These
+The current `ios` tree contains eight decoys in the widened scope: six same-selector
+`staticTexts` existence/label pairs and two same-selector `switches` existence/value pairs. These
 are appear-with-content checks: existence alone is not the state the test consumes.
 
 ## Ruled Design
@@ -27,8 +27,10 @@ The validator remains a bounded lexical source-policy check. It does not become 
    that changing the horizon requires a new ruling.
 4. Within that horizon the scanner skips blank lines and full-line `//` comments. It stops at the
    first substantive line, whether or not that line is a matching property assertion.
-5. A matching `label` or `value` assertion on that first substantive line is reported against the
-   wait line. There is no exemption syntax.
+5. A matching `label` or `value` assertion beginning on that first substantive line is reported
+   against the wait line. The scanner reads a balanced `XCTAssertEqual` call so a direct assertion
+   may span multiple lines; its first line still must fall inside the five-line horizon. There is no
+   exemption syntax.
 6. The scan counts supported element queries independently of findings and fails when that count is
    zero. This sanity floor distinguishes a clean source file from a scanner that no longer matches
    the source idiom at all.
@@ -48,11 +50,11 @@ decoy, and must remain clean.
 
 ## Current-Site Conversion
 
-All seven current findings are converted rather than exempted:
+All eight current findings are converted rather than exempted:
 
 - Add `waitForElementLabel(_:identifier:in:)`, using the existing `AXValueWaiter` and
   `AXElementReadback.label` seams, and replace the six `staticTexts` existence/label pairs.
-- Replace the `switches[showSaved]` existence/value pair with the existing
+- Replace the `switches[showSaved]` and `switches[showHidden]` existence/value pairs with the existing
   `waitForElementValue(_:identifier:in:)` helper.
 
 No product behavior, app accessibility contract, or production source changes. The change affects
@@ -74,10 +76,12 @@ Pytest fixtures prove:
 - intervening substantive code stops pairing;
 - a property assertion beyond the ruled horizon is not paired;
 - different element classes or selectors are not paired;
+- multiline direct assertions and XCTest message/file/line overloads are detected;
+- full-line comments neither count as supported queries nor act as wait anchors;
 - a source with zero supported element queries fails the sanity floor;
 - property-specific waits remain accepted.
 
-The real UI-test source must pass `validate-ax-waits` after all seven conversions. The existing iOS
+The real UI-test source must pass `validate-ax-waits` after all eight conversions. The existing iOS
 workflow invocation remains present. The iOS workflow adds `astral-sh/setup-uv` and runs only
 `pipeline/tests/test_ios_test_shards.py` on both pull-request and manual-dispatch runs. Issue #630
 owns the separately ruled question of full pipeline pytest coverage. Host verification follows

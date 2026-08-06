@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make `validate-ax-waits` honestly cover direct button, static-text, and switch existence/property decoys across the ruled five-line gap, convert all seven current decoys, and execute the checker tests in iOS CI.
+**Goal:** Make `validate-ax-waits` honestly cover direct button, static-text, and switch existence/property decoys across the ruled five-line gap, convert all eight current decoys, and execute the checker tests in iOS CI.
 
 **Architecture:** Keep the validator a bounded lexical scan over Swift source. A query-count sanity floor makes total scanner blindness fail loudly; the scanner skips blank and full-line `//` comments but stops at the first substantive statement. Existing AX readback/waiter seams provide property-specific synchronization in the UI tests.
 
@@ -175,7 +175,7 @@ The step has no event guard, so it runs on both `pull_request` and `workflow_dis
 
 - [ ] **Step 3: Re-run the direct test harness to verify GREEN**
 
-Expected: every new test function returns normally. Also run `python3 scripts/ios-test-shards.py validate-ax-waits --source ios/App/UITests/MakingTracksCoreLoopUITests.swift`; expected: exit 1 with exactly seven findings. This is the RED proof for Task 3.
+Expected: every new test function returns normally. Also run `python3 scripts/ios-test-shards.py validate-ax-waits --source ios/App/UITests/MakingTracksCoreLoopUITests.swift`; expected: exit 1 with exactly eight findings. This is the RED proof for Task 3.
 
 - [ ] **Step 4: Commit the scanner and CI contract**
 
@@ -213,9 +213,9 @@ private func waitForElementLabel(_ label: String, identifier: String, in app: XC
 }
 ```
 
-- [ ] **Step 2: Replace all seven scanner findings**
+- [ ] **Step 2: Replace all eight scanner findings**
 
-Replace each `staticTexts` existence/label pair with one `XCTAssertTrue(waitForElementLabel(...))` call, preserving exact expected strings and app instances. Replace the `switches[showSaved]` existence/value pair with `XCTAssertTrue(waitForElementValue("1", identifier: showSaved, in: app))`.
+Replace each `staticTexts` existence/label pair with one `XCTAssertTrue(waitForElementLabel(...))` call, preserving exact expected strings and app instances. Replace the `switches[showSaved]` and `switches[showHidden]` existence/value pairs with the matching `waitForElementValue` assertions.
 
 - [ ] **Step 3: Verify the real source is GREEN**
 
@@ -225,7 +225,7 @@ Run:
 python3 scripts/ios-test-shards.py validate-ax-waits --source ios/App/UITests/MakingTracksCoreLoopUITests.swift
 ```
 
-Expected: `accessibility wait guard found no decoys` and exit 0. Confirm the widened scanner reported exactly seven before these edits; otherwise stop and reconcile the current tree.
+Expected: `accessibility wait guard found no decoys` and exit 0. Confirm the widened scanner reported exactly eight before these edits; otherwise stop and reconcile the current tree.
 
 - [ ] **Step 4: Commit the conversions**
 
@@ -252,7 +252,7 @@ Do not install missing Python tooling ad hoc. Run the repository-required host S
 
 - [ ] **Step 3: Run adversarial review**
 
-Request distinct spec/correctness, test-teeth, and workflow/safety lenses. Require reviewers to challenge the five-line boundary, sanity-floor honesty, exact seven conversions, workflow trigger scope, and false-positive behavior around post-action assertions. Fix every surviving finding test-first.
+Request distinct spec/correctness, test-teeth, and workflow/safety lenses. Require reviewers to challenge the five-line boundary, sanity-floor honesty, exact eight conversions, workflow trigger scope, and false-positive behavior around post-action assertions. Fix every surviving finding test-first.
 
 - [ ] **Step 4: Re-ground and publish**
 

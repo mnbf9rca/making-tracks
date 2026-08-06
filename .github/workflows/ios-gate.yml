@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/ios-gate.yml"
       - ".github/ios-ui-test-shards.json"
+      - "pipeline/tests/test_ios_test_shards.py"
       - "scripts/ios-test-shards.py"
       - "scripts/derived-data-path.sh"
       - "scripts/release-gate.sh"

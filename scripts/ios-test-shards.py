@@ -20,13 +20,16 @@ AX_ELEMENT_QUERY_RE = re.compile(
     rf'\.(?P<element>{AX_ELEMENT_PATTERN})\[(?P<selector>{AX_SELECTOR_PATTERN})\]'
 )
 AX_EXISTENCE_WAIT_RE = re.compile(
-    rf'XCTAssertTrue\([^)]*\.(?P<element>{AX_ELEMENT_PATTERN})'
-    rf'\[(?P<selector>{AX_SELECTOR_PATTERN})\]\.waitForExistence\(timeout:\s*[^)]*\)\)'
+    rf'\bXCTAssertTrue\s*\(.*?\.(?P<element>{AX_ELEMENT_PATTERN})'
+    rf'\[(?P<selector>{AX_SELECTOR_PATTERN})\]\.waitForExistence\s*\(\s*timeout\s*:',
+    re.DOTALL,
 )
 AX_PROPERTY_ASSERT_RE = re.compile(
-    rf'XCTAssertEqual\([^)]*\.(?P<element>{AX_ELEMENT_PATTERN})'
-    rf'\[(?P<selector>{AX_SELECTOR_PATTERN})\]\.(?P<property>label|value)\b'
+    rf'\bXCTAssertEqual\s*\(.*?\.(?P<element>{AX_ELEMENT_PATTERN})'
+    rf'\[(?P<selector>{AX_SELECTOR_PATTERN})\]\.(?P<property>label|value)\b',
+    re.DOTALL,
 )
+AX_PROPERTY_ASSERT_START_RE = re.compile(r"\bXCTAssertEqual\s*\(")
 
 
 def load_json(path: Path) -> Any:
@@ -94,24 +97,84 @@ def command_validate_static(args: argparse.Namespace) -> int:
     return 0
 
 
+def is_blank_or_full_line_comment(line: str) -> bool:
+    stripped = line.strip()
+    return not stripped or stripped.startswith("//")
+
+
+def swift_call_statement(lines: list[str], start_index: int) -> tuple[str, int]:
+    """Return the balanced call beginning on start_index and its final line index."""
+    statement_lines: list[str] = []
+    depth = 0
+    saw_open = False
+    in_string = False
+    escaped = False
+
+    for end_index in range(start_index, len(lines)):
+        line = lines[end_index]
+        statement_lines.append(line)
+        for char_index, char in enumerate(line):
+            starts_comment = (
+                not in_string
+                and char == "/"
+                and char_index + 1 < len(line)
+                and line[char_index + 1] == "/"
+            )
+            if starts_comment:
+                break
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+            elif char == "(":
+                saw_open = True
+                depth += 1
+            elif char == ")" and saw_open:
+                depth -= 1
+                if depth == 0:
+                    return "\n".join(statement_lines), end_index
+
+    return "\n".join(statement_lines), len(lines) - 1
+
+
 def accessibility_wait_scan(source: Path) -> tuple[int, list[tuple[int, str, str]]]:
     lines = source.read_text(encoding="utf-8").splitlines()
-    query_count = sum(len(AX_ELEMENT_QUERY_RE.findall(line)) for line in lines)
+    query_count = sum(
+        len(AX_ELEMENT_QUERY_RE.findall(line))
+        for line in lines
+        if not is_blank_or_full_line_comment(line)
+    )
     findings: list[tuple[int, str, str]] = []
 
     # This wait-anchored lexical check deliberately does not follow local aliases, no-wait
     # property reads, or read-only continuation. Issue #631 owns those wider classes.
     for index, line in enumerate(lines):
-        wait_match = AX_EXISTENCE_WAIT_RE.search(line)
+        if is_blank_or_full_line_comment(line) or "XCTAssertTrue" not in line:
+            continue
+        wait_statement, wait_end_index = swift_call_statement(lines, index)
+        wait_match = AX_EXISTENCE_WAIT_RE.search(wait_statement)
         if wait_match is None:
             continue
 
-        for candidate in lines[index + 1 : index + 1 + AX_WAIT_LOOKAHEAD_PHYSICAL_LINES]:
-            stripped = candidate.strip()
-            if not stripped or stripped.startswith("//"):
+        candidate_indexes = range(
+            wait_end_index + 1,
+            min(len(lines), wait_end_index + 1 + AX_WAIT_LOOKAHEAD_PHYSICAL_LINES),
+        )
+        for candidate_index in candidate_indexes:
+            candidate = lines[candidate_index]
+            if is_blank_or_full_line_comment(candidate):
                 continue
 
-            assert_match = AX_PROPERTY_ASSERT_RE.search(candidate)
+            assert_statement = candidate
+            if AX_PROPERTY_ASSERT_START_RE.search(candidate):
+                assert_statement, _ = swift_call_statement(lines, candidate_index)
+            assert_match = AX_PROPERTY_ASSERT_RE.search(assert_statement)
             if (
                 assert_match is not None
                 and assert_match.group("element") == wait_match.group("element")

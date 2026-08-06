@@ -3228,10 +3228,8 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
 
         openScope(in: app)
         let showHidden = "explore.scope.include-hidden"
-        XCTAssertTrue(app.switches[showHidden].waitForExistence(timeout: 5))
-        XCTAssertEqual(
-            app.switches[showHidden].value as? String,
-            "0",
+        XCTAssertTrue(
+            waitForElementValue("0", identifier: showHidden, in: app),
             "The unhide proof must begin with Include hidden off."
         )
         app.buttons["Close"].tap()
