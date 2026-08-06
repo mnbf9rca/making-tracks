@@ -29,7 +29,7 @@
 - Modify: `scripts/sim-lock-tests.sh:2088-2469`
 - Test: `scripts/sim-lock-tests.sh`
 
-- [ ] **Step 1: Add artifact-aware fake-Xcode behavior**
+- [x] **Step 1: Add artifact-aware fake-Xcode behavior**
 
 Extend the existing fake `xcodebuild` program so it still logs the complete argument vector, then recognizes real Xcode output flags without replacing production logic:
 
@@ -58,7 +58,7 @@ esac
 
 The fake earns no assertions of its own. Its output exists only so the real gate can create, mark, preserve, and prune artifact directories.
 
-- [ ] **Step 2: Add a local artifact fixture runner**
+- [x] **Step 2: Add a local artifact fixture runner**
 
 Add a helper that invokes the real script in `test` or `full` mode with the existing valid UUID, lock identity, safe persistent DerivedData, test mode, and optional deterministic clock:
 
@@ -83,7 +83,7 @@ run_artifact_gate() {
 
 Locate the created run through the literal test root `/private/tmp/release-gate-$RELEASE_UDID_A/runs` and assert one exact direct child; do not recreate the production run-name matcher in a test helper.
 
-- [ ] **Step 3: Write the first behavioral tests**
+- [x] **Step 3: Write the first behavioral tests**
 
 Name the breaks before the bodies:
 
@@ -99,7 +99,7 @@ expected_marker="$(printf 'release-gate-artifact-v1\nudid=%s' "$RELEASE_UDID_A")
 
 Assert the failed run retains its result bundle and owner marker, has no success marker, and leaves the seeded eligible sibling intact.
 
-- [ ] **Step 4: Run the new tests and observe RED**
+- [x] **Step 4: Run the new tests and observe RED**
 
 Run:
 
@@ -119,7 +119,7 @@ Expected: the new owned-layout assertion fails because the current script still 
 - Modify: `scripts/release-gate.sh:195-288`
 - Test: `scripts/sim-lock-tests.sh`
 
-- [ ] **Step 1: Introduce explicit ownership state**
+- [x] **Step 1: Introduce explicit ownership state**
 
 Add named constants and state near the existing path variables:
 
@@ -138,7 +138,7 @@ SUCCESS_MARKER=""
 
 Treat a local `full`, `test`, or `enumerate` invocation as gate-owned only when both `MT_RELEASE_GATE_RUN_DIR` and `MT_RELEASE_GATE_RESULT_BUNDLE` are empty. `build` keeps the existing fixed run-directory behavior and creates no ownership markers. A fully-default local `full` owned invocation sets `PRUNE_AFTER_SUCCESS=true`.
 
-- [ ] **Step 2: Validate and create the owned directory chain before Xcode**
+- [x] **Step 2: Validate and create the owned directory chain before Xcode**
 
 Implement small Bash functions with one responsibility each:
 
@@ -161,11 +161,11 @@ For owned invocations:
 
 Print the exact owned run path to stderr so a failed gate tells the operator what was preserved.
 
-- [ ] **Step 3: Replace unsafe local preflight deletion**
+- [x] **Step 3: Replace unsafe local preflight deletion**
 
 Keep `rm -rf "$RESULT_BUNDLE"` only in the existing GitHub Actions ownership path. For local `full` and `test`, if a caller-owned result target already exists or is a symlink, refuse before simulator/Xcode work and name the exact path plus the durable evidence recovery root. Never delete an explicit local `MT_RELEASE_GATE_RUN_DIR`, `MT_RELEASE_GATE_RESULT_BUNDLE`, or enumeration output.
 
-- [ ] **Step 4: Add the explicit success finalizer**
+- [x] **Step 4: Add the explicit success finalizer**
 
 At the bottom of the script, after `touch "$DERIVED_DATA"`, call `finalize_owned_artifacts`. It must:
 
@@ -177,7 +177,7 @@ At the bottom of the script, after `touch "$DERIVED_DATA"`, call `finalize_owned
 
 Because the script uses `set -e`, no failed external phase can reach this call. A marker write or current-run validation failure keeps the process nonzero and the run unmarked.
 
-- [ ] **Step 5: Run GREEN and refactor without broadening behavior**
+- [x] **Step 5: Run GREEN and refactor without broadening behavior**
 
 Run:
 
@@ -189,7 +189,7 @@ shellcheck scripts/release-gate.sh scripts/sim-lock-tests.sh
 
 Expected: all assertions pass; syntax and ShellCheck are clean. Refactor only duplicated fixture setup or validation expressions, rerunning the suite after each change.
 
-- [ ] **Step 6: Commit the owned lifecycle**
+- [x] **Step 6: Commit the owned lifecycle**
 
 ```bash
 git add scripts/release-gate.sh scripts/sim-lock-tests.sh
@@ -208,7 +208,7 @@ git log -1 --show-signature --format=fuller
 - Modify: `scripts/sim-lock-tests.sh`
 - Modify: `scripts/release-gate.sh`
 
-- [ ] **Step 1: Add deterministic test-only time**
+- [x] **Step 1: Add deterministic test-only time**
 
 Add production time selection that accepts `MT_RELEASE_GATE_TEST_NOW` only when `MT_SIM_LOCK_TEST_MODE=1`; otherwise it must use `date +%s` even if the test variable leaks into the environment:
 
@@ -224,7 +224,7 @@ gate_now_seconds() {
 
 Reject a non-decimal injected value before any deletion.
 
-- [ ] **Step 2: Write the pruning safety matrix and observe RED**
+- [x] **Step 2: Write the pruning safety matrix and observe RED**
 
 Seed literal direct-child fixtures under the same `runs` root and execute the real successful default `full` gate with `MT_RELEASE_GATE_TEST_NOW=200000`. Use UTC timestamps so one exact marker has epoch `113600` (age `86400`) and another has epoch `113599` (age `86401`). Add distinct sentinels and prove:
 
@@ -237,7 +237,7 @@ Seed literal direct-child fixtures under the same `runs` root and execute the re
 
 Run `./scripts/sim-lock-tests.sh` and observe failure because pruning is not yet implemented or lacks at least one predicate.
 
-- [ ] **Step 3: Implement candidate validation before exact deletion**
+- [x] **Step 3: Implement candidate validation before exact deletion**
 
 Iterate only shell-expanded direct children of the canonical `runs` directory, converting each expansion into one candidate before evaluation. For every candidate require:
 
@@ -252,7 +252,7 @@ age: now - success_mtime > 86400
 
 Skip the current run explicitly. Negative ages are retained. Only after every check succeeds call `rm -rf -- "$candidate"`. If deletion fails, emit `release-gate: cleanup warning:` with the exact candidate and continue successfully so the marker remains retryable.
 
-- [ ] **Step 4: Run GREEN plus mutation checks**
+- [x] **Step 4: Run GREEN plus mutation checks**
 
 Run:
 
@@ -269,7 +269,7 @@ Then make and restore these one-at-a-time local mutations, proving the named tes
 
 After restoration, rerun `bash -n`, ShellCheck, and the entire host suite.
 
-- [ ] **Step 5: Commit pruning safety**
+- [x] **Step 5: Commit pruning safety**
 
 ```bash
 git add scripts/release-gate.sh scripts/sim-lock-tests.sh
@@ -288,7 +288,7 @@ git log -1 --show-signature --format=fuller
 - Modify: `scripts/sim-lock-tests.sh`
 - Modify only if RED requires it: `scripts/release-gate.sh`
 
-- [ ] **Step 1: Add caller-owned path regressions**
+- [x] **Step 1: Add caller-owned path regressions**
 
 Through the production script prove that local explicit paths are never removed:
 
@@ -299,13 +299,13 @@ Through the production script prove that local explicit paths are never removed:
 
 Observe RED before any necessary production adjustment.
 
-- [ ] **Step 2: Add CI lifecycle regression**
+- [x] **Step 2: Add CI lifecycle regression**
 
 Create a fake `xcbeautify` that passes stdin through. Run the real script with `GITHUB_ACTIONS=true`, `MT_RELEASE_GATE_SKIP_LOCK=1`, a valid `MT_RELEASE_GATE_CI_DESTINATION`, and explicit run/result paths. Seed an old sentinel in the result path. Assert CI still replaces that result, completes successfully, and creates no local ownership/success markers.
 
 This test protects the approved non-change: CI owns its explicit upload artifact and retains preflight replacement.
 
-- [ ] **Step 3: Reach GREEN and rerun the complete harness**
+- [x] **Step 3: Reach GREEN and rerun the complete harness**
 
 Run:
 
@@ -317,7 +317,7 @@ shellcheck scripts/release-gate.sh scripts/sim-lock-tests.sh
 
 Expected: all ownership, CI, #612 DerivedData, destination, locking, and concurrency tests pass.
 
-- [ ] **Step 4: Commit compatibility coverage**
+- [x] **Step 4: Commit compatibility coverage**
 
 ```bash
 git add scripts/release-gate.sh scripts/sim-lock-tests.sh
@@ -337,7 +337,7 @@ git log -1 --show-signature --format=fuller
 - Modify: `docs/superpowers/phases/pre-phase/tasks.md`
 - Reference: `docs/superpowers/specs/2026-08-06-success-only-gate-artifact-cleanup-design.md`
 
-- [ ] **Step 1: Replace the inherited one-line result claim**
+- [x] **Step 1: Replace the inherited one-line result claim**
 
 Document the exact local lifecycle:
 
@@ -349,11 +349,11 @@ Document the exact local lifecycle:
 - macOS `com.apple.tmp_cleaner` may remove `/private/tmp` evidence after access, modification, and change times all exceed roughly three days, so extraction within that window is an operator SLA, not gate behavior;
 - the 24-hour success window bounds repeated 168–178 MiB bundles and addresses the incident class in which about 35 GB of DerivedData/result litter exhausted the old host, while acknowledging the second incident without inventing a measurement.
 
-- [ ] **Step 2: Update the #546 task line with evidence placeholders only after evidence exists**
+- [x] **Step 2: Update the #546 task line with evidence placeholders only after evidence exists**
 
 Record the signed implementation heads, host-test counts, ShellCheck status, review disposition, Sourcery result, exact host-gate head/counts/duration, PR URL, labels, and merge ownership. Do not write aspirational completion claims.
 
-- [ ] **Step 3: Review prose and commit**
+- [x] **Step 3: Review prose and commit**
 
 ```bash
 rg -n 'making-tracks-gates/evidence|86400|tmp_cleaner' docs/ios-gate-ledger.md docs/superpowers/specs/2026-08-06-success-only-gate-artifact-cleanup-design.md docs/superpowers/plans/2026-08-06-success-only-gate-artifact-cleanup.md

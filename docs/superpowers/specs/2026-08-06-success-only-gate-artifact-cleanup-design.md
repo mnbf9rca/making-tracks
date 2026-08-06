@@ -50,6 +50,7 @@ The validated simulator UUID remains the seat-isolation boundary:
 └── runs/
     └── run-<UTC basic timestamp>-<PID>/
         ├── .release-gate-owned
+        ├── .release-gate-preserve       # only when a caller override targets this run
         ├── MakingTracksTests.xcresult
         ├── enumerated-tests.json        # enumerate mode only
         └── .release-gate-success        # created only after success
@@ -62,6 +63,8 @@ The run name format is exact: `run-YYYYMMDDTHHMMSSZ-<decimal PID>`. A pre-existi
 The unique owned layout is used for local `full`, `test`, and `enumerate` modes when both `MT_RELEASE_GATE_RUN_DIR` and `MT_RELEASE_GATE_RESULT_BUNDLE` are unset. `build` mode produces no result artifact and retains its existing run-directory behavior.
 
 Any explicit local `MT_RELEASE_GATE_RUN_DIR` or `MT_RELEASE_GATE_RESULT_BUNDLE` makes the path caller-owned. The gate never removes it. If Xcode requires a nonexistent result path and the caller-owned target already exists, the gate refuses with a recovery instruction instead of deleting it. CI retains the existing preflight replacement and later upload lifecycle because CI, not the local cleanup policy, owns those explicit artifacts.
+
+If a caller-named result or enumeration path resolves anywhere inside an otherwise valid owned run, the gate writes an exact `.release-gate-preserve` identity marker before Xcode. That marker permanently disqualifies the containing run from automatic pruning, so a later default gate cannot delete the caller-owned descendant indirectly.
 
 ## Successful finalization and pruning
 
@@ -76,10 +79,13 @@ Finalization does the following:
    - its basename matches the exact run-name grammar;
    - it is a real directory, not a symlink;
    - both markers are real regular files, not symlinks, with exact schema/UUID content;
+   - no `.release-gate-preserve` entry exists;
    - its canonical parent is the current canonical `runs` root;
    - the success marker is **strictly older** than `86400` seconds (`age > 86400`; equality is retained).
 
 The threshold is a named constant with a provenance comment pointing to #546. Tests may inject a clock only under the existing simulator-lock test mode; production uses `date +%s`.
+
+Immediately before deletion, cleanup records the validated candidate's device/inode identity, atomically moves the candidate to a unique direct-child quarantine path, and repeats the boundary, identity-marker, preserve-marker, and age checks. A mismatch restores the candidate pathname when possible and otherwise leaves the quarantined directory preserved with an explicit warning. Only the revalidated quarantine path becomes the exact deletion operand.
 
 Prune failures are reported as explicit cleanup warnings and do not rewrite the already successful gate result. The marked directory remains eligible for a later retry. Path/marker validation failures skip that candidate without touching it.
 
@@ -90,6 +96,7 @@ Prune failures are reported as explicit cleanup warnings and do not rewrite the 
 - No wildcard or global release-gate scan is a deletion target.
 - A symlinked gate root, `runs` root, run directory, or marker fails validation; cleanup never follows it.
 - Only direct children are candidates; nested descendants and similarly prefixed names are ignored.
+- A caller override nested anywhere beneath an owned run creates a preserve marker, and any preserve-marker entry disqualifies that run.
 - Legacy fixed-path bundles remain untouched and require operator disposition.
 - The gate never automatically deletes failed or unmarked run directories. Because those directories remain under `/private/tmp`, macOS `com.apple.tmp_cleaner` can still remove their files after access, modification, and change times are all older than roughly three days. Operators must extract or copy evidence to the durable convention under `$HOME/Library/Application Support/making-tracks-gates/evidence/` within that OS window; this is an operator SLA, not gate behavior. This durable-root convention follows the planner ruling in AMQ message `2026-08-06T07-18-11.151Z_pid12763_bf6584ff`; `~/Library/Caches` is reserved for bounded transient holdings with a named cleanup trigger.
 - DerivedData pruning remains separate. #612's persistent cache roots and temporary-path guards are unchanged.
@@ -115,6 +122,7 @@ The regression matrix proves:
 5. invalid names, nested directories, wrong marker content, symlink directories, symlink markers, and candidates outside the canonical direct-child boundary are untouched;
 6. CI keeps its current explicit-artifact lifecycle and creates no local ownership/success markers;
 7. the existing #612 DerivedData and simulator-lock suites remain green.
+8. an unfiltered owned gate succeeds under macOS system Bash 3.2, a nested caller override survives later pruning, and a candidate pathname replacement is detected and restored before deletion.
 
 Each cleanup assertion targets filesystem state produced through the production script, not a copied shell fragment.
 

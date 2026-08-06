@@ -49,6 +49,12 @@ through `MT_RELEASE_GATE_RUN_DIR`, `MT_RELEASE_GATE_RESULT_BUNDLE`, or another a
 caller-owned and remain outside automatic cleanup. GitHub Actions keeps its existing explicit artifact
 replacement and upload lifecycle.
 
+If a caller override resolves inside a previously owned run, the gate writes `.release-gate-preserve`
+before Xcode; that marker permanently disqualifies the whole containing run from cleanup. Eligible
+successes are moved to a unique quarantine pathname and their device/inode, boundary, markers, and age
+are revalidated there before deletion. A mismatch or deletion failure is preserved and warned, never
+treated as cleanup success.
+
 Failure evidence is temporary even though the gate preserves it. The macOS `com.apple.tmp_cleaner`
 service can remove files beneath `/private/tmp` after their access, modification, and change times are all
 older than roughly three days. Operators therefore extract or copy needed evidence within that OS window
