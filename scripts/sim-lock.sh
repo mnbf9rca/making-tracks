@@ -61,11 +61,11 @@ case "$LOCK_WAIT_SECONDS" in
   *) die "MT_SIM_LOCK_WAIT must be a canonical non-negative integer" ;;
 esac
 case "$GATE_MAX_CONCURRENT" in
-  1|2) ;;
-  [3-9]|[1-9][0-9]*)
-    die "MT_GATE_MAX_CONCURRENT cannot exceed the host ceiling of 2"
+  1|2|3) ;;
+  [4-9]|[1-9][0-9]*)
+    die "MT_GATE_MAX_CONCURRENT cannot exceed the host ceiling of 3"
     ;;
-  *) die "MT_GATE_MAX_CONCURRENT must be 1 or 2" ;;
+  *) die "MT_GATE_MAX_CONCURRENT must be 1, 2 or 3" ;;
 esac
 
 parse_destination_udid() {
@@ -694,7 +694,8 @@ sim-lock.sh — the only way to touch a Making Tracks gate simulator
 
 <seat> is one of codex1, codex2, codex3 or codex4. Its destination is resolved
 from docs/ios-gate-ledger.md. Same-simulator work serializes, while stable
-global slot locks cap aggregate concurrency (MT_GATE_MAX_CONCURRENT, default 2).
+global slot locks cap aggregate concurrency (MT_GATE_MAX_CONCURRENT, default 2,
+host ceiling 3).
 
 Never read lock files by hand to decide whether a simulator is free. A file
 records who holds its inode, not every process that may be using the simulator.
