@@ -1055,8 +1055,7 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openScope(in: app)
         let showSaved = "explore.scope.show-saved"
         let attractionCategory = "explore.scope.category.attraction"
-        XCTAssertTrue(app.switches[showSaved].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.switches[showSaved].value as? String, "1")
+        XCTAssertTrue(waitForElementValue("1", identifier: showSaved, in: app))
         XCTAssertEqual(app.buttons[attractionCategory].value as? String, "Selected")
 
         tapSwitch(in: app, identifier: showSaved, expectedValue: "0")
@@ -2514,14 +2513,16 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openJournalDoor(in: app)
         openListFromTracksRoot(named: "KL walk", in: app)
 
-        XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 1 of these · all seen")
+        XCTAssertTrue(waitForElementLabel(
+            "you've been to 1 of these · all seen",
+            identifier: "lists.detail.progress",
+            in: app
+        ))
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Ghost Sign"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
 
-        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "KL walk")
+        XCTAssertTrue(waitForElementLabel("KL walk", identifier: "map.list-mode.title", in: app))
         XCTAssertTrue(app.buttons["map.list-mode.back"].exists)
         XCTAssertFalse(app.buttons["map.list-mode.close"].exists)
         XCTAssertTrue(app.buttons["map.door.explore"].exists)
@@ -3897,8 +3898,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         app.buttons["map.list-mode.back"].tap()
         XCTAssertTrue(app.staticTexts["Replay week"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 1 of these · all seen")
+        XCTAssertTrue(waitForElementLabel(
+            "you've been to 1 of these · all seen",
+            identifier: "lists.detail.progress",
+            in: app
+        ))
         XCTAssertTrue(app.staticTexts["Dense Pin 1"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Dense Pin 2"].exists)
 
@@ -3913,8 +3917,11 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(waitForSourceFeatureCount(6, in: app))
         app.buttons["map.list-mode.back"].tap()
         XCTAssertTrue(app.staticTexts["Replay week"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "you've been to 6 of these · all seen")
+        XCTAssertTrue(waitForElementLabel(
+            "you've been to 6 of these · all seen",
+            identifier: "lists.detail.progress",
+            in: app
+        ))
         XCTAssertTrue(app.staticTexts["Dense Pin 2"].waitForExistence(timeout: 5))
     }
 
@@ -4091,15 +4098,13 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         openListFromTracksRoot(named: "Track pair", in: app)
         XCTAssertTrue(app.buttons["lists.detail.show-map"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
-        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "Track pair")
+        XCTAssertTrue(waitForElementLabel("Track pair", identifier: "map.list-mode.title", in: app))
 
         app.buttons["map.list-mode.back"].tap()
 
         XCTAssertTrue(app.staticTexts["Track pair"].waitForExistence(timeout: 5))
         app.buttons["lists.detail.show-map"].tap()
-        XCTAssertTrue(app.staticTexts["map.list-mode.title"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.staticTexts["map.list-mode.title"].label, "Track pair")
+        XCTAssertTrue(waitForElementLabel("Track pair", identifier: "map.list-mode.title", in: app))
         XCTAssertFalse(app.staticTexts["Lists"].exists)
     }
 
@@ -7494,6 +7499,20 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         let result = XCTWaiter.wait(for: [expectation], timeout: 10)
         if result != .completed {
             XCTFail("Expected \(identifier) enabled \(enabled), got \(button.exists ? String(button.isEnabled) : "missing button")")
+            return false
+        }
+        return true
+    }
+
+    private func waitForElementLabel(_ label: String, identifier: String, in app: XCUIApplication) -> Bool {
+        let result = AXValueWaiter.wait(expected: label, timeout: 10) {
+            AXElementReadback.label(for: identifier) {
+                let current = element(identifier: $0, in: app)
+                return (exists: current.exists, label: current.label)
+            }
+        }
+        if !result.matched {
+            XCTFail("Expected \(identifier) label \(label), got \(result.observed ?? "missing element")")
             return false
         }
         return true
