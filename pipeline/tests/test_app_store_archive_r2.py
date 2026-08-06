@@ -197,6 +197,18 @@ def test_streaming_failure_is_redacted(tmp_path: Path):
     assert "R2_SECRET_SENTINEL" not in str(caught.value)
 
 
+@pytest.mark.parametrize("failure_at", ["list", "get", "put"])
+def test_client_operation_failures_are_redacted(tmp_path: Path, failure_at: str):
+    local = _local_artifact(tmp_path)
+    client = InMemoryS3()
+    client.failure_at = failure_at
+
+    with pytest.raises(ArchiveStorageError) as caught:
+        R2ArchiveStore(client, BUCKET).publish(local)
+
+    assert "R2_SECRET_SENTINEL" not in str(caught.value)
+
+
 def test_resolve_sha_reports_zero_and_multiple_candidates(tmp_path: Path):
     client = InMemoryS3(page_size=1)
     store = R2ArchiveStore(client, BUCKET)

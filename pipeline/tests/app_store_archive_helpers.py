@@ -33,10 +33,11 @@ class FakeArchiveCommands:
         self.calls.append(call)
         if len(call) >= 4 and call[0] == "git" and call[1] == "-C" and call[3] == "rev-parse":
             return self.git_output
-        if call == ("xcrun", "dwarfdump", "--uuid", str(self.app_binary)):
-            return self.app_dwarfdump_output or _dwarfdump(self.app_uuids, self.app_binary)
-        if call == ("xcrun", "dwarfdump", "--uuid", str(self.dsym_binary)):
-            return self.dsym_dwarfdump_output or _dwarfdump(self.dsym_uuids, self.dsym_binary)
+        if len(call) == 4 and call[:3] == ("xcrun", "dwarfdump", "--uuid"):
+            binary = Path(call[3])
+            if any(part.endswith(".dSYM") for part in binary.parts):
+                return self.dsym_dwarfdump_output or _dwarfdump(self.dsym_uuids, binary)
+            return self.app_dwarfdump_output or _dwarfdump(self.app_uuids, binary)
         if call == ("xcodebuild", "-version"):
             return self.xcode_output
         raise AssertionError(f"unexpected command: {call!r}")
@@ -97,10 +98,13 @@ class InMemoryS3:
         self.calls: list[tuple[str, str, str]] = []
         self.corrupt_get_key: str | None = None
         self.read_failure_key: str | None = None
+        self.failure_at: str | None = None
         self.precondition_races: dict[str, bytes] = {}
 
     def put_object(self, *, Bucket, Key, Body, IfNoneMatch=None):
         self.calls.append(("put", Bucket, Key))
+        if self.failure_at == "put":
+            raise RuntimeError("R2_SECRET_SENTINEL")
         if IfNoneMatch != "*":
             raise AssertionError("immutable writes require IfNoneMatch='*'")
         if Key in self.precondition_races:
@@ -116,6 +120,8 @@ class InMemoryS3:
 
     def get_object(self, *, Bucket, Key):
         self.calls.append(("get", Bucket, Key))
+        if self.failure_at == "get":
+            raise RuntimeError("R2_SECRET_SENTINEL")
         try:
             data = self.objects[(Bucket, Key)]
         except KeyError as exc:
@@ -139,6 +145,8 @@ class InMemoryS3:
         ContinuationToken=None,
     ):
         self.calls.append(("list", Bucket, Prefix))
+        if self.failure_at == "list":
+            raise RuntimeError("R2_SECRET_SENTINEL")
         if Delimiter != "/":
             raise AssertionError("archive discovery must use Delimiter='/'")
         prefixes = sorted(
