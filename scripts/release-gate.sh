@@ -91,12 +91,21 @@ package_resolution_digest() {
   shasum -a 256 "$PACKAGE_RESOLVED" | awk '{print $1}'
 }
 
+package_resolution_head_digest() {
+  git show "HEAD:$PACKAGE_RESOLVED" | shasum -a 256 | awk '{print $1}'
+}
+
 package_resolution_matches_head() {
+  local current_digest
+  local head_digest
+
   [ -f "$PACKAGE_RESOLVED" ] &&
     [ ! -L "$PACKAGE_RESOLVED" ] &&
     git ls-files --error-unmatch -- "$PACKAGE_RESOLVED" >/dev/null 2>&1 &&
-    git diff --quiet -- "$PACKAGE_RESOLVED" &&
-    git diff --cached --quiet HEAD -- "$PACKAGE_RESOLVED"
+    git diff --cached --quiet HEAD -- "$PACKAGE_RESOLVED" || return 1
+  head_digest="$(package_resolution_head_digest)" || return 1
+  current_digest="$(package_resolution_digest)" || return 1
+  [ -n "$head_digest" ] && [ "$current_digest" = "$head_digest" ]
 }
 
 capture_committed_package_resolution() {
@@ -477,6 +486,7 @@ xcodebuild_log_name() {
 
 run_xcodebuild() {
   local label
+  local pipeline_statuses
   local raw_log
   local xcode_status
 
@@ -492,7 +502,12 @@ run_xcodebuild() {
 
     raw_log="$RUN_DIR/$(xcodebuild_log_name "$label")"
     xcodebuild "${PACKAGE_RESOLUTION_ARGS[@]}" "$@" 2>&1 | tee "$raw_log" | xcbeautify
-    xcode_status=$?
+    pipeline_statuses=("${PIPESTATUS[@]}")
+    xcode_status="${pipeline_statuses[0]}"
+    if [ "$xcode_status" -eq 0 ]; then
+      [ "${pipeline_statuses[1]}" -eq 0 ] || xcode_status="${pipeline_statuses[1]}"
+      [ "${pipeline_statuses[2]}" -eq 0 ] || xcode_status="${pipeline_statuses[2]}"
+    fi
   fi
 
   verify_committed_package_resolution || return 1
