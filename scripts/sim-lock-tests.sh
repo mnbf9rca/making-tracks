@@ -2783,6 +2783,32 @@ else
     "caller_status=$nested_caller_rc prune_status=$nested_prune_rc result=$(test -f "$nested_caller_result/Info.plist" && echo present || echo missing) caller_output='$(echo "$nested_caller_out" | tail -1)' prune_output='$(echo "$nested_prune_out" | tail -1)'"
 fi
 
+rm -rf "$RELEASE_RUN_DIR_A"
+mkdir -p "$ARTIFACT_RUNS_A"
+nested_enumeration_run="$ARTIFACT_RUNS_A/run-20260801T000000Z-9202"
+nested_enumeration_result="$nested_enumeration_run/caller-enumerated-tests.json"
+seed_successful_artifact "$nested_enumeration_run" "$RELEASE_UDID_A"
+: >"$XCODEBUILD_LOG"
+set +e
+nested_enumeration_out="$(run_artifact_gate enumerate \
+  MT_RELEASE_GATE_ENUMERATED_TESTS_JSON="$nested_enumeration_result" 2>&1)"
+nested_enumeration_rc=$?
+set -e
+TZ=UTC touch -t 197001020733.19 "$nested_enumeration_run/.release-gate-success"
+set +e
+nested_enumeration_prune_out="$(run_artifact_gate full MT_RELEASE_GATE_TEST_NOW=200000 2>&1)"
+nested_enumeration_prune_rc=$?
+set -e
+if [ "$nested_enumeration_rc" -eq 0 ] &&
+   [ "$nested_enumeration_prune_rc" -eq 0 ] &&
+   grep -q '"tests":\[\]' "$nested_enumeration_result" &&
+   [ -f "$nested_enumeration_run/.release-gate-preserve" ]; then
+  record_ok "enumeration override inside an owned sibling permanently disqualifies that sibling"
+else
+  record_fail "enumeration override inside an owned sibling permanently disqualifies that sibling" \
+    "enumerate_status=$nested_enumeration_rc prune_status=$nested_enumeration_prune_rc result=$(test -f "$nested_enumeration_result" && echo present || echo missing) enumerate_output='$(echo "$nested_enumeration_out" | tail -1)' prune_output='$(echo "$nested_enumeration_prune_out" | tail -1)'"
+fi
+
 # shellcheck disable=SC2016 # Expanded when the fake cleanup commands run.
 printf '%s\n' \
   '#!/usr/bin/env bash' \

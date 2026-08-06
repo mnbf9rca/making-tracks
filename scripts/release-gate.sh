@@ -226,6 +226,10 @@ prepare_artifact_paths() {
     write_identity_marker "$OWNERSHIP_MARKER"
     RESULT_BUNDLE="$RUN_DIR/MakingTracksTests.xcresult"
     ENUMERATED_TESTS_JSON="${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-$RUN_DIR/enumerated-tests.json}"
+    if [ "$MODE" = "enumerate" ] &&
+       [ -n "${MT_RELEASE_GATE_ENUMERATED_TESTS_JSON:-}" ]; then
+      mark_containing_owned_run_preserved "$ENUMERATED_TESTS_JSON"
+    fi
     if [ "$MODE" = "full" ] &&
        [ -z "$ONLY_TESTING_FILE" ] &&
        [ -z "$XCTESTRUN_FILE" ]; then
