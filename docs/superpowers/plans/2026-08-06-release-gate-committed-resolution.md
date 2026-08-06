@@ -63,7 +63,7 @@ fixtures through `RELEASE_FIXTURE_REPO`. Add `XCRUN_LOG="$TMP/xcrun.log"`,
 make fake `xcrun` append its arguments when `MT_TEST_XCRUN_LOG` is set, and
 export that path from the fixture runner.
 
-- [ ] **Step 2: Write seven failing preflight/post-phase cases**
+- [ ] **Step 2: Write six failing cases and one status-preservation characterization**
 
 Add these exact cases:
 
@@ -83,13 +83,16 @@ empty Xcode log and empty simulator-command log. The successful-mutator case
 runs `full` mode and requires only one logged Xcode call, a drift diagnostic,
 and no success marker. The unchanged failure case makes the fake Release build
 return `73` and requires both gate exit `73` and
-`release build status=73`.
+`release build status=73`; this last case characterizes behavior the existing
+`phase` wrapper already provides and protects it through the refactor.
 
 - [ ] **Step 3: Run RED**
 
 Run `bash scripts/sim-lock-tests.sh`.
 
-Expected: the existing 126 cases remain green and all seven new cases fail.
+Expected: the existing 126 cases and the status-preservation characterization
+remain green; the five preflight cases and successful-mutator case fail, for
+`127 passed, 6 failed`.
 If sandboxing blocks cache or process-inspection paths, rerun the identical
 command with host approval.
 
