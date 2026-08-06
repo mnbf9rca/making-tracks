@@ -1887,15 +1887,64 @@ else
   wait "$cap_b_pid" 2>/dev/null
 fi
 
+CEILING_A="$TMP/ceiling-a"
+CEILING_B="$TMP/ceiling-b"
+CEILING_C="$TMP/ceiling-c"
+CEILING_D="$TMP/ceiling-d"
+register_release "$CEILING_A"
+register_release "$CEILING_B"
+register_release "$CEILING_C"
+register_release "$CEILING_D"
+MT_GATE_MAX_CONCURRENT=3 start_holder "TEST-CEILING-SIM-A" "$CEILING_A" >"$CEILING_A.log" 2>&1 &
+ceiling_a_pid=$!
+MT_GATE_MAX_CONCURRENT=3 start_holder "TEST-CEILING-SIM-B" "$CEILING_B" >"$CEILING_B.log" 2>&1 &
+ceiling_b_pid=$!
+MT_GATE_MAX_CONCURRENT=3 start_holder "TEST-CEILING-SIM-C" "$CEILING_C" >"$CEILING_C.log" 2>&1 &
+ceiling_c_pid=$!
+ceiling_setup_ok=1
+wait_for_path "$CEILING_A.started" || ceiling_setup_ok=0
+wait_for_path "$CEILING_B.started" || ceiling_setup_ok=0
+wait_for_path "$CEILING_C.started" || ceiling_setup_ok=0
+if [ "$ceiling_setup_ok" -eq 1 ]; then
+  MT_GATE_MAX_CONCURRENT=3 start_holder "TEST-CEILING-SIM-D" "$CEILING_D" >"$CEILING_D.log" 2>&1 &
+  ceiling_d_pid=$!
+  if wait_for_pattern "$CEILING_D.log" "waiting for one of 3 global gate slots" &&
+     [ ! -e "$CEILING_D.started" ]; then
+    touch "$CEILING_A.release"
+    if wait_for_path "$CEILING_D.started"; then
+      record_ok "admits three gates at the measured ceiling and queues a fourth"
+    else
+      record_fail "admits three gates at the measured ceiling and queues a fourth" \
+        "fourth gate stayed queued after a ceiling slot opened"
+    fi
+  else
+    record_fail "admits three gates at the measured ceiling and queues a fourth" \
+      "fourth gate started while three ceiling slots were occupied"
+    touch "$CEILING_A.release"
+  fi
+  touch "$CEILING_B.release" "$CEILING_C.release" "$CEILING_D.release"
+  wait "$ceiling_a_pid" 2>/dev/null
+  wait "$ceiling_b_pid" 2>/dev/null
+  wait "$ceiling_c_pid" 2>/dev/null
+  wait "$ceiling_d_pid" 2>/dev/null
+else
+  record_fail "admits three gates at the measured ceiling and queues a fourth" \
+    "three different simulators could not occupy the three available slots"
+  touch "$CEILING_A.release" "$CEILING_B.release" "$CEILING_C.release"
+  wait "$ceiling_a_pid" 2>/dev/null
+  wait "$ceiling_b_pid" 2>/dev/null
+  wait "$ceiling_c_pid" 2>/dev/null
+fi
+
 set +e
 oversized_cap_out="$(
-  MT_GATE_MAX_CONCURRENT=3 \
+  MT_GATE_MAX_CONCURRENT=4 \
     run_gate_for "TEST-CAP-OVERSIZED" true 2>&1
 )"
 oversized_cap_rc=$?
 set -e
 if [ "$oversized_cap_rc" -ne 0 ] &&
-   echo "$oversized_cap_out" | grep -q "cannot exceed the host ceiling of 2"; then
+   echo "$oversized_cap_out" | grep -q "cannot exceed the host ceiling of 3"; then
   record_ok "rejects a caller that tries to enlarge the host-wide cap"
 else
   record_fail "rejects a caller that tries to enlarge the host-wide cap" \
@@ -1910,7 +1959,7 @@ noncanonical_cap_out="$(
 noncanonical_cap_rc=$?
 set -e
 if [ "$noncanonical_cap_rc" -ne 0 ] &&
-   echo "$noncanonical_cap_out" | grep -q "must be 1 or 2"; then
+   echo "$noncanonical_cap_out" | grep -q "must be 1, 2 or 3"; then
   record_ok "rejects leading-zero cap values before arithmetic"
 else
   record_fail "rejects leading-zero cap values before arithmetic" \

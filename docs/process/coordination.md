@@ -103,7 +103,9 @@ When the spec doesn't settle a judgment call:
 
 ## Standing items
 
-0. **Measurement-window ceiling exception** (Rob, 2026-08-02, verbatim): *"authorize gate concurrency above 2 within planner-authorized #600 measurement windows only, pending the evidence-based amendment."* The AGENTS.md ceiling rule carries the timeless form; this entry is its provenance.
+0. **Host gate concurrency:** the production host ceiling is `3`. The #600 measurement window and its
+   temporary exception are retired. The measurement record and evidence-based ruling provenance live in
+   [`docs/ios-gate-ledger.md`](../ios-gate-ledger.md) → *Host Concurrency Ceiling Evidence (#600)*.
 
 Durable facts the fleet operates under (moved here from planner's session memory so a restart preserves them).
 
