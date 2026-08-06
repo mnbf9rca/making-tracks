@@ -12,11 +12,20 @@ from typing import Any, Iterable
 
 
 TEST_FUNCTION_RE = re.compile(r"\bfunc\s+(test[A-Za-z0-9_]+)\s*\(")
-BUTTON_EXISTENCE_WAIT_RE = re.compile(
-    r'XCTAssertTrue\([^)]*\.buttons\["(?P<identifier>[^"]+)"\]\.waitForExistence\(timeout:\s*[^)]*\)\)'
+# Ruled in #417: widening this five-physical-line horizon requires a new ruling.
+AX_WAIT_LOOKAHEAD_PHYSICAL_LINES = 5
+AX_ELEMENT_PATTERN = r"buttons|staticTexts|switches"
+AX_SELECTOR_PATTERN = r'"(?:[^"\\]|\\.)*"|[A-Za-z_][A-Za-z0-9_]*'
+AX_ELEMENT_QUERY_RE = re.compile(
+    rf'\.(?P<element>{AX_ELEMENT_PATTERN})\[(?P<selector>{AX_SELECTOR_PATTERN})\]'
 )
-BUTTON_PROPERTY_ASSERT_RE = re.compile(
-    r'XCTAssertEqual\([^)]*\.buttons\["(?P<identifier>[^"]+)"\]\.(?P<property>label|value)\b'
+AX_EXISTENCE_WAIT_RE = re.compile(
+    rf'XCTAssertTrue\([^)]*\.(?P<element>{AX_ELEMENT_PATTERN})'
+    rf'\[(?P<selector>{AX_SELECTOR_PATTERN})\]\.waitForExistence\(timeout:\s*[^)]*\)\)'
+)
+AX_PROPERTY_ASSERT_RE = re.compile(
+    rf'XCTAssertEqual\([^)]*\.(?P<element>{AX_ELEMENT_PATTERN})'
+    rf'\[(?P<selector>{AX_SELECTOR_PATTERN})\]\.(?P<property>label|value)\b'
 )
 
 
@@ -85,28 +94,40 @@ def command_validate_static(args: argparse.Namespace) -> int:
     return 0
 
 
-def decoy_accessibility_waits(source: Path) -> list[tuple[int, str, str]]:
+def accessibility_wait_scan(source: Path) -> tuple[int, list[tuple[int, str, str]]]:
     lines = source.read_text(encoding="utf-8").splitlines()
+    query_count = sum(len(AX_ELEMENT_QUERY_RE.findall(line)) for line in lines)
     findings: list[tuple[int, str, str]] = []
 
-    for index, line in enumerate(lines[:-1]):
-        wait_match = BUTTON_EXISTENCE_WAIT_RE.search(line)
+    # This wait-anchored lexical check deliberately does not follow local aliases, no-wait
+    # property reads, or read-only continuation. Issue #631 owns those wider classes.
+    for index, line in enumerate(lines):
+        wait_match = AX_EXISTENCE_WAIT_RE.search(line)
         if wait_match is None:
             continue
 
-        assert_match = BUTTON_PROPERTY_ASSERT_RE.search(lines[index + 1])
-        if assert_match is None:
-            continue
+        for candidate in lines[index + 1 : index + 1 + AX_WAIT_LOOKAHEAD_PHYSICAL_LINES]:
+            stripped = candidate.strip()
+            if not stripped or stripped.startswith("//"):
+                continue
 
-        identifier = wait_match.group("identifier")
-        if assert_match.group("identifier") == identifier:
-            findings.append((index + 1, identifier, assert_match.group("property")))
+            assert_match = AX_PROPERTY_ASSERT_RE.search(candidate)
+            if (
+                assert_match is not None
+                and assert_match.group("element") == wait_match.group("element")
+                and assert_match.group("selector") == wait_match.group("selector")
+            ):
+                selector = wait_match.group("selector").strip('"')
+                findings.append((index + 1, selector, assert_match.group("property")))
+            break
 
-    return findings
+    return query_count, findings
 
 
 def command_validate_ax_waits(args: argparse.Namespace) -> int:
-    findings = decoy_accessibility_waits(args.source)
+    query_count, findings = accessibility_wait_scan(args.source)
+    if query_count == 0:
+        return emit_error("accessibility wait guard matched no supported accessibility queries")
     if findings:
         lines = ["decoy accessibility waits:"]
         lines.extend(
@@ -115,7 +136,7 @@ def command_validate_ax_waits(args: argparse.Namespace) -> int:
         )
         return emit_error("\n".join(lines))
 
-    print("accessibility wait guard found no decoys")
+    print(f"accessibility wait guard found no decoys across {query_count} supported queries")
     return 0
 
 

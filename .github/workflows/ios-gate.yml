@@ -36,6 +36,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Test iOS shard tooling
+        run: uv run --package making-tracks-pipeline --extra dev pytest pipeline/tests/test_ios_test_shards.py
+
       - name: Select Xcode
         run: |
           set -euo pipefail

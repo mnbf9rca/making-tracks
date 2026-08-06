@@ -93,12 +93,137 @@ def test_decoy_accessibility_wait_validation_flags_same_identifier_value_read(tm
     assert ".value" in result.stderr
 
 
+def test_decoy_accessibility_wait_validation_flags_static_text_after_comment_gap(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """
+        final class MakingTracksCoreLoopUITests: XCTestCase {
+            func testDecoyWait() {
+                XCTAssertTrue(app.staticTexts["lists.detail.progress"].waitForExistence(timeout: 5))
+
+                // Content arrives after existence.
+                XCTAssertEqual(app.staticTexts["lists.detail.progress"].label, "all seen")
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "lists.detail.progress" in result.stderr
+    assert ".label" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_flags_simple_variable_switch_selector(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """
+        final class MakingTracksCoreLoopUITests: XCTestCase {
+            func testDecoyWait() {
+                XCTAssertTrue(app.switches[showSaved].waitForExistence(timeout: 5))
+                XCTAssertEqual(app.switches[showSaved].value as? String, "1")
+            }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "showSaved" in result.stderr
+    assert ".value" in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_detects_fifth_physical_line(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.buttons["x"].waitForExistence(timeout: 5))
+
+// one
+// two
+// three
+XCTAssertEqual(app.buttons["x"].label, "Y")
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert 'x' in result.stderr
+
+
+def test_decoy_accessibility_wait_validation_stops_beyond_fifth_physical_line(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.buttons["x"].waitForExistence(timeout: 5))
+
+// one
+// two
+// three
+// four
+XCTAssertEqual(app.buttons["x"].label, "Y")
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_decoy_accessibility_wait_validation_stops_at_substantive_line(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.buttons["x"].waitForExistence(timeout: 5))
+app.buttons["x"].tap()
+XCTAssertEqual(app.buttons["x"].label, "Y")
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_decoy_accessibility_wait_validation_requires_same_element_and_selector(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        """XCTAssertTrue(app.buttons["x"].waitForExistence(timeout: 5))
+XCTAssertEqual(app.staticTexts["x"].label, "Y")
+""",
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_decoy_accessibility_wait_validation_fails_when_scanner_matches_no_queries(tmp_path):
+    source = tmp_path / "MakingTracksCoreLoopUITests.swift"
+    source.write_text(
+        'XCTAssertTrue(waitForButtonLabel("Y", identifier: "x", in: app))\n',
+        encoding="utf-8",
+    )
+
+    result = _run("validate-ax-waits", "--source", str(source))
+
+    assert result.returncode == 1
+    assert "matched no supported accessibility queries" in result.stderr
+
+
 def test_decoy_accessibility_wait_validation_accepts_property_specific_wait(tmp_path):
     source = tmp_path / "MakingTracksCoreLoopUITests.swift"
     source.write_text(
         """
         final class MakingTracksCoreLoopUITests: XCTestCase {
             func testSpecificWait() {
+                XCTAssertTrue(app.buttons["menu"].exists)
                 XCTAssertTrue(waitForButtonLabel("Love", identifier: "place-card.loved", in: app))
                 XCTAssertTrue(waitForElementValue("Selected", identifier: "track-filter-picker.loved", in: app))
             }
@@ -111,6 +236,14 @@ def test_decoy_accessibility_wait_validation_accepts_property_specific_wait(tmp_
 
     assert result.returncode == 0, result.stderr
     assert "accessibility wait guard found no decoys" in result.stdout
+
+
+def test_ios_gate_runs_ax_wait_validation_and_focused_pytest():
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ios-gate.yml").read_text(encoding="utf-8")
+
+    assert "python3 scripts/ios-test-shards.py validate-ax-waits" in workflow
+    assert "astral-sh/setup-uv@v9.0.0" in workflow
+    assert "pytest pipeline/tests/test_ios_test_shards.py" in workflow
 
 
 def test_write_only_testing_outputs_full_xcode_identifiers(tmp_path):
