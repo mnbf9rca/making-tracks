@@ -91,14 +91,14 @@ Prune failures are reported as explicit cleanup warnings and do not rewrite the 
 - A symlinked gate root, `runs` root, run directory, or marker fails validation; cleanup never follows it.
 - Only direct children are candidates; nested descendants and similarly prefixed names are ignored.
 - Legacy fixed-path bundles remain untouched and require operator disposition.
-- The gate never automatically deletes failed or unmarked run directories. Because those directories remain under `/private/tmp`, macOS `com.apple.tmp_cleaner` can still remove their files after access, modification, and change times are all older than roughly three days. Operators must extract or copy evidence to the durable convention under `~/Library/Caches/making-tracks-gates/evidence/` within that OS window; this is an operator SLA, not gate behavior.
+- The gate never automatically deletes failed or unmarked run directories. Because those directories remain under `/private/tmp`, macOS `com.apple.tmp_cleaner` can still remove their files after access, modification, and change times are all older than roughly three days. Operators must extract or copy evidence to the durable convention under `$HOME/Library/Application Support/making-tracks-gates/evidence/` within that OS window; this is an operator SLA, not gate behavior. This durable-root convention follows the planner ruling in AMQ message `2026-08-06T07-18-11.151Z_pid12763_bf6584ff`; `~/Library/Caches` is reserved for bounded transient holdings with a named cleanup trigger.
 - DerivedData pruning remains separate. #612's persistent cache roots and temporary-path guards are unchanged.
 
 ## Error handling and recovery
 
 An unsafe or ambiguous gate-owned root fails before Xcode. A caller-owned result target that already exists also fails before Xcode and names the exact path; the operator may move it to durable evidence storage or remove it after extraction, then retry.
 
-If a gate fails, the emitted path is preserved for diagnosis. Operators extract counts and failure evidence, copy anything durable beneath `~/Library/Caches/making-tracks-gates/evidence/<issue>`, and manually delete only the exact released failure directory. Automatic cleanup never makes that judgment.
+If a gate fails, the emitted path is preserved for diagnosis. Operators extract counts and failure evidence, copy anything durable beneath `$HOME/Library/Application Support/making-tracks-gates/evidence/<issue>`, and manually delete only the exact released failure directory. Automatic cleanup never makes that judgment.
 
 If successful cleanup reports a warning, operators inspect the named exact candidate. They do not broaden the command to a parent directory or wildcard.
 
