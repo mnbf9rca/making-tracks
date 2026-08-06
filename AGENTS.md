@@ -120,24 +120,56 @@ Removing the worktree is part of finishing the branch, not a later sweep — see
 
 Host-only package tests do not use the simulator: for `/ios` Swift package work covered by host tests, run `cd ios && swift test` on the macOS host. These never touch CoreSimulator and **must not** take the fleet lock.
 
-Simulator-backed work is a shared-machine resource and uses **one designated simulator**, `agent-ios-tests` (UDID `C4A64D49-24A2-4429-B6E2-AD9A14142A99`), driving the app project `ios/App/MakingTracks.xcodeproj`, scheme `MakingTracks`.
+Simulator-backed work uses the per-seat fleet defined by the `ios` branch's
+`docs/ios-gate-ledger.md` → *Host Gate Seats*. **`scripts/sim-lock.sh` is the only entry point for a gate
+simulator**: build, test, boot, shutdown, erase and delete all run as
+`./scripts/sim-lock.sh --seat codexN <command>`. The wrapper resolves the current destination; callers
+never copy, export or pass a simulator UDID. For target-taking `xcrun simctl` commands, omit the target
+argument because the wrapper inserts the assigned seat's UUID after the verb. `simctl list` remains
+targetless.
 
-**Nothing touches the designated simulator except through `scripts/sim-lock.sh`.** It owns the fleet lock and is the only thing that takes it — build, test, boot, shutdown, erase, delete. This binds coordinators exactly as it binds builders: a maintenance command run by hand is still a second thing touching the simulator. A Release build contends for the same simulator state as a test run, so builds go through it too. Use exactly one destination, by UDID, with parallel and concurrent-destination testing disabled — those are the paths that spawn simulator clones.
+The wrapper takes a stable per-simulator lock and a stable global counting semaphore. Aggregate gate
+concurrency defaults to `2`; the host ceiling is `3`, so callers may select `1`, `2` or `3` with
+`MT_GATE_MAX_CONCURRENT` but cannot exceed it. The measurement record and evidence-based ruling for that
+ceiling live in the `ios` branch's `docs/ios-gate-ledger.md` → *Host Concurrency Ceiling Evidence
+(#600)*. Cap `1` takes an exclusive admission lock: it waits for ordinary gates and prevents new ones,
+and is the fleet-maintenance mode.
 
-**Never read the lock file to decide whether the simulator is free.** It records who holds the lock, not who is using the simulator, and work that never took the lock leaves it looking idle. Use `sim-lock.sh --status`, which checks the lock and the process table and reports HELD if either fires. Acting on a bare `lsof` reading is how a running gate lost its simulator (incidents → *A hand-checked lock erased a running gate*).
+**Never read a lock file by hand to decide whether a simulator is free.** Use
+`./scripts/sim-lock.sh --seat codexN --status`, which checks the simulator lock and process table and
+reports HELD if either fires. Acting on a bare `lsof` reading is how a running gate lost its simulator
+(incidents → *A hand-checked lock erased a running gate*). Never delete or replace a lock file as
+recovery; lock descriptors intentionally pass to descendants, so a surviving background child must be
+stopped before retrying.
 
-Boot with `xcrun simctl bootstatus "$UDID" -b` — idempotent and blocking. **Never use `simctl boot` in agent scripts**, and **never put `simctl delete all` or `simctl shutdown all` in a shared script** — unscoped, those destroy or disrupt Rob's simulators and every other agent's.
-
-Commands, cleanup, clone detection and the simulator's full identity: [`docs/process/ios-simulator.md`](docs/process/ios-simulator.md).
+`scripts/release-gate.sh` runs only beneath `sim-lock.sh --seat codexN`; it does not take a second lock.
+Commands, cleanup and simulator safety remain in [`docs/process/ios-simulator.md`](docs/process/ios-simulator.md),
+but its retired single-simulator identity and commands containing a hardcoded UDID are superseded by the
+seat table and wrapper contract on `ios`.
 
 ### Disk hygiene (mandatory)
 
 Derived data and result bundles are the biggest disk producers on this shared host. A full disk kills CoreSimulator fleet-wide and every failure then looks like a flaky test (incidents → *Disk exhaustion killed the simulator fleet*). Two laws, both non-negotiable:
 
-1. **One reusable derived-data path per agent — never per-run numbered dirs.** Point every `xcodebuild` run at a single stable `-derivedDataPath /private/tmp/dd-<agent-name>`. Per-run paths accumulate without bound.
-2. **Delete result bundles after extracting counts.** If a run uses `-resultBundlePath <path>.xcresult`, parse the counts you need, then `rm -rf` the bundle in the same script — never leave `.xcresult` bundles on disk between runs.
+1. **One reusable DerivedData path per seat — never per-run numbered directories.** Let
+   `sim-lock.sh --seat codexN` supply `$HOME/Library/Caches/making-tracks-gates/<seat>`. A path that
+   canonically resolves under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's per-user temporary `.../T/`
+   tree is refused because automatic cleaners can remove it during a gate. Per-run paths accumulate
+   without bound.
+2. **Delete successful result bundles after extracting counts.** A failed full bundle is retained only on
+   explicit planner direction, only as a bounded transient holding under
+   `$HOME/Library/Caches/making-tracks-gates/evidence/<owning-issue>/`, and only when its file count,
+   reproducible digest, named cleanup trigger and cleanup owner are recorded. Copy its small failure
+   export to the non-purgeable permanent root
+   `$HOME/Library/Application Support/making-tracks-gates/evidence/<owning-issue>/`. After the trigger,
+   the owner deletes the full bundle; the permanent export, digest and file count remain. Never leave an
+   `.xcresult` in its temporary run directory between runs.
 
-The idiom for both is in [`docs/process/ios-simulator.md`](docs/process/ios-simulator.md) → *Disk hygiene idiom*.
+The successful-result cleanup idiom remains in
+[`docs/process/ios-simulator.md`](docs/process/ios-simulator.md) → *Disk hygiene idiom*. Its retired
+`/private/tmp` DerivedData example is superseded by the wrapper-managed cache path above and by the
+`ios` branch's `docs/ios-gate-ledger.md` → *Per-seat DerivedData roots*; its unconditional failed-bundle
+deletion wording is superseded by the bounded evidence exception above.
 
 ## Review gates (mandatory before declaring anything complete)
 
@@ -167,7 +199,9 @@ Before opening any PR, run this sequence top to bottom. Each step is stated in f
 4. **Release-configuration build** for iOS app-target work, under the fleet lock (Review gates, point 3).
 5. **Zero new warnings** (Review gates, point 4).
 6. **Stale-base diff review.** `git diff --stat origin/<target>..HEAD` (two-dot) must show **only your additions**. Deletions or edits to other agents' merged work mean your base is stale and you are about to clobber it — stop and re-ground (step 1).
-7. **Artifact cleanup** (Disk hygiene). No `.xcresult` bundles left; one reusable derived-data dir.
+7. **Artifact cleanup** (Disk hygiene). No successful or temporary-run `.xcresult` bundles remain; a
+   failed bundle may remain only under the bounded evidence exception in Disk hygiene, point 2. Keep one
+   reusable DerivedData directory per seat.
 8. **Push before requesting review** (Workflow). A review request against unpushed work is a no-op. Confirm the remote branch exists.
 9. **Open the PR** into `<target>` with labels applied immediately — `sourcery-review` (always) + the **track** label + the **wp** label — and cross-link the issue(s) it delivers in the body (Review gates, point 5; Reporting, issues and labels).
 10. **Process every review comment** (Review gates, point 5). Nothing merges with an unresolved thread.
