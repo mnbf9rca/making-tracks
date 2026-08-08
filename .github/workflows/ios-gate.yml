@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/ios-gate.yml"
       - ".github/ios-ui-test-shards.json"
+      - "pipeline/tests/test_ios_test_shards.py"
       - "scripts/ios-test-shards.py"
       - "scripts/derived-data-path.sh"
       - "scripts/release-gate.sh"
@@ -35,6 +36,11 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Test iOS shard tooling
+        run: uv run --package making-tracks-pipeline --extra dev pytest pipeline/tests/test_ios_test_shards.py
 
       - name: Select Xcode
         run: |
