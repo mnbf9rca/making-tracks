@@ -445,12 +445,13 @@ final class InteractionsTests: XCTestCase {
     }
 
     func testUpdateVisitDateTargetsOneVisitRowAndPreservesTimeOfDay() throws {
-        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
-        let place = try ref("p_date_edit")
-        let first = try db.recordVisit(place)
-        let second = try db.recordVisit(place)
         let calendar = Calendar(identifier: .gregorian)
         let targetDay = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 7, day: 14)))
+        let recordedAt = Date(timeIntervalSince1970: 100)
+        let db = try AppDatabase.inMemory(now: { targetDay.addingTimeInterval(60 * 60 * 24) })
+        let place = try ref("p_date_edit")
+        let first = try db.recordVisit(place, at: recordedAt)
+        let second = try db.recordVisit(place, at: recordedAt)
 
         try db.updateVisitDate(id: first, toDayContaining: targetDay, calendar: calendar)
 
@@ -461,9 +462,79 @@ final class InteractionsTests: XCTestCase {
         XCTAssertEqual(calendar.component(.year, from: visits[0].visitedAt), 2026)
         XCTAssertEqual(calendar.component(.month, from: visits[0].visitedAt), 7)
         XCTAssertEqual(calendar.component(.day, from: visits[0].visitedAt), 14)
-        XCTAssertEqual(calendar.component(.hour, from: visits[0].visitedAt), calendar.component(.hour, from: Date(timeIntervalSince1970: 100)))
-        XCTAssertEqual(calendar.component(.minute, from: visits[0].visitedAt), calendar.component(.minute, from: Date(timeIntervalSince1970: 100)))
-        XCTAssertEqual(visits[1].visitedAt, Date(timeIntervalSince1970: 100))
+        XCTAssertEqual(calendar.component(.hour, from: visits[0].visitedAt), calendar.component(.hour, from: recordedAt))
+        XCTAssertEqual(calendar.component(.minute, from: visits[0].visitedAt), calendar.component(.minute, from: recordedAt))
+        XCTAssertEqual(visits[1].visitedAt, recordedAt)
+    }
+
+    func testUpdateVisitDateRejectsTomorrowWithoutMutatingTheVisit() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Kuala_Lumpur"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 6,
+            hour: 9
+        )))
+        let original = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 5,
+            hour: 22,
+            minute: 15
+        )))
+        let tomorrow = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 7,
+            hour: 8
+        )))
+        let db = try AppDatabase.inMemory(now: { now })
+        let id = try db.recordVisit(ref("p_future_date"), at: original)
+        try db.dbQueue.write { database in
+            try database.execute(
+                sql: "UPDATE visits SET visit_order = 7 WHERE id = ?",
+                arguments: [id]
+            )
+        }
+
+        XCTAssertThrowsError(
+            try db.updateVisitDate(id: id, toDayContaining: tomorrow, calendar: calendar)
+        ) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .futureVisitDate)
+        }
+
+        let stored = try XCTUnwrap(db.visit(id: id))
+        XCTAssertEqual(stored.visitedAt, original)
+        XCTAssertEqual(stored.visitOrder, 7)
+    }
+
+    func testUpdateVisitDateAcceptsLaterInstantOnSameSuppliedLocalDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Pacific/Kiritimati"))
+        let now = Date(timeIntervalSince1970: 1_775_565_000)
+        let laterLocalToday = Date(timeIntervalSince1970: 1_775_608_200)
+        let original = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 4,
+            day: 7,
+            hour: 21,
+            minute: 15
+        )))
+        let db = try AppDatabase.inMemory(now: { now })
+        let id = try db.recordVisit(ref("p_local_today"), at: original)
+
+        try db.updateVisitDate(
+            id: id,
+            toDayContaining: laterLocalToday,
+            calendar: calendar
+        )
+
+        let stored = try XCTUnwrap(db.visit(id: id))
+        XCTAssertEqual(
+            calendar.dateComponents([.year, .month, .day, .hour, .minute], from: stored.visitedAt),
+            DateComponents(year: 2026, month: 4, day: 8, hour: 21, minute: 15)
+        )
     }
 
     func testReorderVisitsWithinDayUsesVisitIDsNotPlaceIDs() throws {

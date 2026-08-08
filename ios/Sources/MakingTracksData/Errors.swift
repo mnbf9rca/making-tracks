@@ -8,4 +8,5 @@ public enum AppDatabaseError: Error, Equatable {
     case listNameTooLong
     case systemListIsProtected
     case savedPlaceCannotBeHidden
+    case futureVisitDate
 }

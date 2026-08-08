@@ -244,10 +244,10 @@ final class CoreLoopControllerTests: XCTestCase {
     }
 
     func testVisitEditingOperationsEmitChangedPlaceIDsByVisitIdentity() async throws {
-        let db = try AppDatabase.inMemory(now: { Date(timeIntervalSince1970: 100) })
+        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
+        let db = try AppDatabase.inMemory(now: { day.addingTimeInterval(60 * 60 * 24 * 2) })
         let controller = CoreLoopController(database: db)
         var changes = controller.changes.makeAsyncIterator()
-        let day = Date(timeIntervalSince1970: 60 * 60 * 24 * 10)
         let firstPlace = try makePlace("p_edit_first")
         let secondPlace = try makePlace("p_edit_second")
         let first = try db.recordVisit(firstPlace, at: day.addingTimeInterval(60))
@@ -278,6 +278,44 @@ final class CoreLoopControllerTests: XCTestCase {
         let deleteChange = await changes.next()
         XCTAssertEqual(deleteChange, ["p_edit_second"])
         XCTAssertEqual(try db.trackVisits().map(\.id), [nextDayFirst, first])
+    }
+
+    func testRejectedFutureVisitDateEmitsNoChangeBeforeNextSuccessfulAction() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Kuala_Lumpur"))
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 6,
+            hour: 9
+        )))
+        let yesterday = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 5,
+            hour: 12
+        )))
+        let tomorrow = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 7,
+            hour: 12
+        )))
+        let db = try AppDatabase.inMemory(now: { now })
+        let controller = CoreLoopController(database: db)
+        var changes = controller.changes.makeAsyncIterator()
+        let rejectedID = try db.recordVisit(makePlace("p_rejected_future"), at: yesterday)
+        let successfulID = try db.recordVisit(makePlace("p_success_after_rejection"), at: yesterday)
+
+        XCTAssertThrowsError(
+            try controller.updateVisitDate(id: rejectedID, toDayContaining: tomorrow)
+        ) { error in
+            XCTAssertEqual(error as? AppDatabaseError, .futureVisitDate)
+        }
+        try controller.setVisitVerdict(id: successfulID, .loved)
+
+        let firstChange = await changes.next()
+        XCTAssertEqual(firstChange, ["p_success_after_rejection"])
     }
 
     func testUnseeingFromPlaceCardDeletesOnlyLatestVisitEvent() async throws {

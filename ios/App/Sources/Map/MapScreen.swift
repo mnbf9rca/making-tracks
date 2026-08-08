@@ -5993,10 +5993,11 @@ private struct ListDetailView: View {
     }
 }
 
-private struct TrackVisitDateEditorView: View {
+struct TrackVisitDateEditorView: View {
     let model: MapScreenModel?
     let onChanged: @MainActor () async -> Void
     let onDismiss: @MainActor () -> Void
+    private let datePolicy: VisitDateEditPolicy
 
     @State private var visit: TrackVisit
     @State private var selectedDate: Date
@@ -6005,14 +6006,18 @@ private struct TrackVisitDateEditorView: View {
     init(
         model: MapScreenModel?,
         visit: TrackVisit,
+        now: Date = Date(),
+        calendar: Calendar = Calendar(identifier: .gregorian),
         onChanged: @escaping @MainActor () async -> Void,
         onDismiss: @escaping @MainActor () -> Void
     ) {
+        let datePolicy = VisitDateEditPolicy(now: now, calendar: calendar)
         self.model = model
         self.onChanged = onChanged
         self.onDismiss = onDismiss
+        self.datePolicy = datePolicy
         _visit = State(initialValue: visit)
-        _selectedDate = State(initialValue: visit.visitedAt)
+        _selectedDate = State(initialValue: datePolicy.clamped(visit.visitedAt))
     }
 
     var body: some View {
@@ -6080,6 +6085,7 @@ private struct TrackVisitDateEditorView: View {
                                             selectedDate = date
                                         }
                                     ),
+                                    in: ...datePolicy.latestSelectableDate,
                                     displayedComponents: .date
                                 )
                                 .datePickerStyle(.compact)
