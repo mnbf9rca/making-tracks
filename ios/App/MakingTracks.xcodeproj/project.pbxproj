@@ -21,6 +21,7 @@
 		7856947E7D46610EA335891E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 63FDD03D128539278BC591EB /* Assets.xcassets */; };
 		78788452A4FEB6D53DD8EF44 /* Newsreader16pt-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E0D3E19BD0CBD3FCA3AF1319 /* Newsreader16pt-SemiBold.ttf */; };
 		7A6CC84AF434C17FE7633943 /* PlaceCardSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58714DEBC153020CC7FD67F3 /* PlaceCardSheet.swift */; };
+		8191F70582A95FE5DFB24DA5 /* PlaceCardMoreMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7B9DE9BCD31001B71609F8 /* PlaceCardMoreMenuButton.swift */; };
 		860B88DB4E847DB9B041149A /* MakingTracksMapStyle in Frameworks */ = {isa = PBXBuildFile; productRef = 1340500250A212BB86356FB9 /* MakingTracksMapStyle */; };
 		8755EE16C4180FE7D73DFDCD /* ManagedPlacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3525A5E7A7CEBCA35304E0E /* ManagedPlacesView.swift */; };
 		915D71B1930B5DB4AEF0ABC3 /* Newsreader72pt-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A48E219EA55B851FD5EDD31F /* Newsreader72pt-SemiBold.ttf */; };
@@ -68,6 +69,7 @@
 		0B6E6A8728A3BBF7FBCF25B9 /* AppLocationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocationManager.swift; sourceTree = "<group>"; };
 		0ED60266EB41A05525C52E2E /* MapLayerVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayerVisibility.swift; sourceTree = "<group>"; };
 		14A314C56A67C5475B3FF04E /* NativeClusteringSpikeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeClusteringSpikeTests.swift; sourceTree = "<group>"; };
+		1A7B9DE9BCD31001B71609F8 /* PlaceCardMoreMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCardMoreMenuButton.swift; sourceTree = "<group>"; };
 		1CB5F787D9335E6F6658C952 /* OSSCredits.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = OSSCredits.json; sourceTree = "<group>"; };
 		1E19C34E0B445601AD8B5A35 /* WorldBasemap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldBasemap.swift; sourceTree = "<group>"; };
 		2B2C08C6EC4CC9B925C76CEC /* LocationSessionPoliciesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationSessionPoliciesTests.swift; sourceTree = "<group>"; };
@@ -152,6 +154,7 @@
 		6BB310F23BF49DFFAF5F76B5 /* PlaceCard */ = {
 			isa = PBXGroup;
 			children = (
+				1A7B9DE9BCD31001B71609F8 /* PlaceCardMoreMenuButton.swift */,
 				58714DEBC153020CC7FD67F3 /* PlaceCardSheet.swift */,
 			);
 			path = PlaceCard;
@@ -476,6 +479,7 @@
 				06447D7969A73B3EBB37BF48 /* MapLayerVisibility.swift in Sources */,
 				03DDC05F05147127FAC7FFA5 /* MapScreen.swift in Sources */,
 				12C5D166DC2E3F3E836B4BA0 /* OnboardingFlow.swift in Sources */,
+				8191F70582A95FE5DFB24DA5 /* PlaceCardMoreMenuButton.swift in Sources */,
 				7A6CC84AF434C17FE7633943 /* PlaceCardSheet.swift in Sources */,
 				0690E2BBD5D936C280A81F6C /* WorldBasemap.swift in Sources */,
 			);

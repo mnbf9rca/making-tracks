@@ -740,6 +740,26 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         )
     }
 
+    private func assertAccessibilityInteractiveTarget(
+        _ element: XCUIElement,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let calculationEpsilon: CGFloat = 0.001
+        XCTAssertGreaterThanOrEqual(
+            element.frame.width,
+            52 - calculationEpsilon,
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(
+            element.frame.height,
+            52 - calculationEpsilon,
+            file: file,
+            line: line
+        )
+    }
+
     private func assertContainedInAppFrame(
         _ element: XCUIElement,
         in app: XCUIApplication,
@@ -1823,14 +1843,56 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertTrue(saveButton.exists)
         XCTAssertTrue(seenButton.exists)
         XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
-        XCTAssertTrue(app.buttons["place-card.more"].exists)
-        app.buttons["place-card.more"].tap()
+        let moreButton = app.buttons["place-card.more"]
+        XCTAssertTrue(moreButton.exists)
+        assertMinimumInteractiveTarget(moreButton)
+        assertContainedInAppFrame(moreButton, in: app)
+        moreButton.tap()
         let addToListButton = app.buttons["place-card.add-to-list"]
+        let initialCopyIDButton = app.buttons["place-card.copy-id"]
         XCTAssertTrue(addToListButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(initialCopyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(addToListButton.label, "Add to list")
+        XCTAssertEqual(initialCopyIDButton.label, "Copy ID")
+        XCTAssertTrue(addToListButton.isEnabled)
+        XCTAssertTrue(initialCopyIDButton.isEnabled)
+        print(
+            "PLACE_CARD_COPY_ID_DEFAULT_ROWS add=\(addToListButton.frame) "
+                + "copy=\(initialCopyIDButton.frame)"
+        )
+        XCTAssertLessThanOrEqual(
+            addToListButton.frame.maxY,
+            initialCopyIDButton.frame.minY + 0.5
+        )
+        assertContainedInAppFrame(addToListButton, in: app)
+        assertContainedInAppFrame(initialCopyIDButton, in: app)
         addToListButton.tap()
         XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
         app.buttons["list-picker.done"].tap()
         XCTAssertFalse(app.buttons["place-card.add-to-list"].exists)
+
+        app.buttons["place-card.more"].tap()
+        let copyIDButton = app.buttons["place-card.copy-id"]
+        XCTAssertTrue(copyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(copyIDButton.label, "Copy ID")
+        copyIDButton.tap()
+
+        let copiedButton = app.buttons["place-card.copy-id"]
+        XCTAssertTrue(copiedButton.exists)
+        XCTAssertEqual(copiedButton.label, "Copied")
+        XCTAssertFalse(copiedButton.isEnabled)
+        XCTAssertTrue(waitForNonExistence(of: copiedButton, timeout: 3))
+        XCTAssertTrue(saveButton.isHittable, "Copy confirmation dismissal must restore the place card")
+
+        app.buttons["place-card.more"].tap()
+        XCTAssertTrue(copyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(copyIDButton.label, "Copy ID")
+        XCTAssertTrue(addToListButton.waitForExistence(timeout: 5))
+        addToListButton.tap()
+        XCTAssertTrue(app.navigationBars["Add to list"].waitForExistence(timeout: 5))
+        app.buttons["list-picker.done"].tap()
+        XCTAssertTrue(waitForNonExistence(of: copyIDButton, timeout: 3))
+        XCTAssertTrue(saveButton.isHittable, "A subsequent menu action must restore the place card")
         XCTAssertEqual(seenButton.label, "Seen")
         let saveFrameBeforeAttributionScroll = saveButton.frame
         XCTAssertTrue(chips.waitForExistence(timeout: 5))
@@ -1851,6 +1913,69 @@ final class MakingTracksCoreLoopUITests: XCTestCase {
         XCTAssertLessThan(abs(saveButton.frame.minY - saveFrameBeforeAttributionScroll.minY), 3)
         XCTAssertTrue(saveButton.isHittable)
         XCTAssertFalse(actionBar.buttons["place-card.hide"].exists)
+    }
+
+    func testPlaceCardMoreMenuCopyConfirmationRemainsReachableAtAX5() {
+        let app = launch(
+            reset: true,
+            accessibilityTextSize: true,
+            seedUserList: true
+        )
+        let map = app.otherElements["map.surface"]
+        XCTAssertTrue(map.waitForExistence(timeout: 10))
+        openFixtureCard(in: map, app: app)
+
+        let moreButton = app.buttons["place-card.more"]
+        XCTAssertTrue(moreButton.waitForExistence(timeout: 5))
+        let accessibilityTargetPredicate = NSPredicate { object, _ in
+            guard let element = object as? XCUIElement else { return false }
+            return element.frame.width >= 51.999
+                && element.frame.height >= 51.999
+        }
+        let minimumTargetExpectation = XCTNSPredicateExpectation(
+            predicate: accessibilityTargetPredicate,
+            object: moreButton
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [minimumTargetExpectation], timeout: 5),
+            .completed
+        )
+        print("PLACE_CARD_COPY_ID_AX_MORE frame=\(moreButton.frame) app=\(app.frame)")
+        assertAccessibilityInteractiveTarget(moreButton)
+        assertContainedInAppFrame(moreButton, in: app)
+        moreButton.tap()
+
+        let addToListButton = app.buttons["place-card.add-to-list"]
+        let copyIDButton = app.buttons["place-card.copy-id"]
+        XCTAssertTrue(addToListButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(copyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(addToListButton.label, "Add to list")
+        XCTAssertEqual(copyIDButton.label, "Copy ID")
+        XCTAssertTrue(addToListButton.isEnabled)
+        XCTAssertTrue(copyIDButton.isEnabled)
+        print(
+            "PLACE_CARD_COPY_ID_AX_ROWS add=\(addToListButton.frame) "
+                + "copy=\(copyIDButton.frame)"
+        )
+        XCTAssertLessThanOrEqual(
+            addToListButton.frame.maxY,
+            copyIDButton.frame.minY + 0.5
+        )
+        assertContainedInAppFrame(addToListButton, in: app)
+        assertContainedInAppFrame(copyIDButton, in: app)
+
+        copyIDButton.tap()
+
+        let copiedButton = app.buttons["place-card.copy-id"]
+        XCTAssertTrue(copiedButton.exists)
+        XCTAssertEqual(copiedButton.label, "Copied")
+        XCTAssertFalse(copiedButton.isEnabled)
+
+        XCTAssertTrue(waitForNonExistence(of: copiedButton, timeout: 3))
+        XCTAssertTrue(moreButton.isHittable)
+        moreButton.tap()
+        XCTAssertTrue(copyIDButton.waitForExistence(timeout: 5))
+        XCTAssertEqual(copyIDButton.label, "Copy ID")
     }
 
     func testSavedPlaceCardOmitsHideAcrossVisitStates() {

@@ -456,19 +456,9 @@ struct PlaceCardSheet: View {
         HStack {
             Spacer()
 
-            Menu {
-                Button("Add to list") {
-                    showListPicker = true
-                }
-                .accessibilityIdentifier("place-card.add-to-list")
-            } label: {
-                PlaceCardMoreIconGlyph()
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            PlaceCardMoreMenuButton(placeID: placeID) {
+                showListPicker = true
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("More")
-            .accessibilityIdentifier("place-card.more")
         }
     }
 

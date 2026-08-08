@@ -1707,10 +1707,16 @@ final class AppShellTests: XCTestCase {
             ).count,
             1
         )
+        let moreMenuButtons = descendants(
+            of: PlaceCardMoreMenuButton.self,
+            in: placeCard.header
+        )
+        XCTAssertEqual(moreMenuButtons.count, 1)
+        let moreMenuButton = try XCTUnwrap(moreMenuButtons.first)
         XCTAssertEqual(
             descendants(
                 of: PlaceCardMoreIconGlyph.self,
-                in: placeCard.header
+                in: moreMenuButton.body
             ).count,
             1
         )
@@ -5340,6 +5346,252 @@ final class AppShellTests: XCTestCase {
     }
 
     @MainActor
+    func testPlaceCardMoreMenuIdleContentPreservesOrderAndIdentifiers() throws {
+        let menu = PlaceCardMoreMenuContent.menu(
+            state: .idle,
+            onAddToList: {},
+            onCopyID: {}
+        )
+        let actions = try menu.children.map { element in
+            try XCTUnwrap(element as? UIAction)
+        }
+
+        XCTAssertEqual(actions.map(\.title), ["Add to list", "Copy ID"])
+        XCTAssertEqual(
+            actions.map(\.identifier),
+            [
+                UIAction.Identifier("place-card.add-to-list"),
+                UIAction.Identifier("place-card.copy-id"),
+            ]
+        )
+        XCTAssertEqual(
+            actions.map(\.accessibilityIdentifier),
+            ["place-card.add-to-list", "place-card.copy-id"]
+        )
+        XCTAssertFalse(actions[0].attributes.contains(.keepsMenuPresented))
+        XCTAssertTrue(actions[1].attributes.contains(.keepsMenuPresented))
+        XCTAssertFalse(actions[1].attributes.contains(.disabled))
+    }
+
+    @MainActor
+    func testPlaceCardMoreMenuCopiedContentKeepsAddFirstAndDisablesConfirmation() throws {
+        let menu = PlaceCardMoreMenuContent.menu(
+            state: .copied,
+            onAddToList: {},
+            onCopyID: {}
+        )
+        let actions = try menu.children.map { element in
+            try XCTUnwrap(element as? UIAction)
+        }
+        let copied = actions[1]
+
+        XCTAssertEqual(actions.map(\.title), ["Add to list", "Copied"])
+        XCTAssertEqual(actions[0].identifier, UIAction.Identifier("place-card.add-to-list"))
+        XCTAssertEqual(copied.identifier, UIAction.Identifier("place-card.copy-id"))
+        XCTAssertEqual(actions[0].accessibilityIdentifier, "place-card.add-to-list")
+        XCTAssertEqual(copied.accessibilityIdentifier, "place-card.copy-id")
+        XCTAssertTrue(copied.attributes.contains(.disabled))
+        XCTAssertTrue(copied.attributes.contains(.keepsMenuPresented))
+        XCTAssertTrue(copied.image?.isEqual(UIImage(systemName: "checkmark")) == true)
+    }
+
+    @MainActor
+    func testPlaceCardMoreMenuButtonRetainsRuledMoreGlyph() {
+        let button = PlaceCardMoreMenuButton(
+            placeID: "mt1_glyph",
+            onAddToList: {}
+        )
+
+        XCTAssertEqual(
+            descendants(of: PlaceCardMoreIconGlyph.self, in: button.body).count,
+            1
+        )
+    }
+
+    @MainActor
+    func testPlaceCardMoreMenuCoordinatorWiresExactProductionEffectsAndDuration() async {
+        let delayStarted = expectation(description: "coordinator delay started")
+        let delay = ManualConfirmationDelay()
+        var events: [String] = []
+        var requestedDurations: [Duration] = []
+        let coordinator = PlaceCardMoreMenuCoordinator(
+            placeID: "mt1_raw-coordinator-payload",
+            onAddToList: {},
+            effects: PlaceCardCopyIDEffects(
+                copy: { events.append("copy:\($0)") },
+                announce: { events.append("announce:\($0)") },
+                sleep: { duration in
+                    requestedDurations.append(duration)
+                    delayStarted.fulfill()
+                    await delay.wait()
+                }
+            )
+        )
+
+        coordinator.activateCopyID()
+        await fulfillment(of: [delayStarted])
+
+        XCTAssertEqual(
+            events,
+            [
+                "copy:mt1_raw-coordinator-payload",
+                "announce:Place ID copied.",
+            ]
+        )
+        XCTAssertEqual(requestedDurations, [.seconds(1)])
+        XCTAssertEqual(coordinator.state, .copied)
+
+        coordinator.cancel()
+        delay.resumeAll()
+    }
+
+    @MainActor
+    func testPlaceCardCopyIDLiveEffectsComposeExactSystemAdapters() async {
+        let pasteboard = UIPasteboard.withUniqueName()
+        defer { UIPasteboard.remove(withName: pasteboard.name) }
+        var postedNotifications: [UIAccessibility.Notification] = []
+        var postedArguments: [String] = []
+        var sleptDurations: [Duration] = []
+        let effects = PlaceCardCopyIDEffects.live(
+            pasteboard: pasteboard,
+            postAccessibility: { notification, argument in
+                postedNotifications.append(notification)
+                postedArguments.append(argument as? String ?? "not-a-string")
+            },
+            sleep: { sleptDurations.append($0) }
+        )
+
+        effects.copy("mt1_live-RAW_payload-without-a-newline")
+        effects.announce("Place ID copied.")
+        await effects.sleep(.milliseconds(750))
+
+        XCTAssertEqual(
+            pasteboard.string,
+            "mt1_live-RAW_payload-without-a-newline"
+        )
+        XCTAssertEqual(postedNotifications, [.announcement])
+        XCTAssertEqual(postedArguments, ["Place ID copied."])
+        XCTAssertEqual(sleptDurations, [.milliseconds(750)])
+    }
+
+    @MainActor
+    func testCopyIDConfirmationCopiesRawPayloadAndAnnouncesBeforeCopiedState() {
+        let delay = ManualConfirmationDelay()
+        var events: [String] = []
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { events.append("copy:\($0)") },
+            announce: { events.append("announce:\($0)") },
+            setState: {
+                events.append($0 == .copied ? "state:copied" : "state:idle")
+            },
+            delay: { await delay.wait() },
+            dismiss: { events.append("dismiss") }
+        )
+        let rawPlaceID = "mt1_01RAW_identifier-without-a-newline"
+
+        controller.activate(placeID: rawPlaceID)
+
+        XCTAssertEqual(
+            events,
+            [
+                "copy:\(rawPlaceID)",
+                "announce:Place ID copied.",
+                "state:copied",
+            ]
+        )
+        controller.cancel()
+        delay.resumeAll()
+    }
+
+    @MainActor
+    func testCopyIDConfirmationWaitsForInjectedDelayBeforeDismissAndReset() async {
+        let delay = ManualConfirmationDelay()
+        let delayStarted = expectation(description: "confirmation delay started")
+        let dismissed = expectation(description: "menu dismissed")
+        var states: [PlaceCardCopyIDConfirmationState] = []
+        var dismissCount = 0
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { _ in },
+            announce: { _ in },
+            setState: { states.append($0) },
+            delay: {
+                delayStarted.fulfill()
+                await delay.wait()
+            },
+            dismiss: {
+                dismissCount += 1
+                dismissed.fulfill()
+            }
+        )
+
+        controller.activate(placeID: "mt1_delay")
+        await fulfillment(of: [delayStarted])
+        XCTAssertEqual(dismissCount, 0)
+        XCTAssertEqual(states, [.copied])
+
+        delay.resumeAll()
+        await fulfillment(of: [dismissed])
+
+        XCTAssertEqual(dismissCount, 1)
+        XCTAssertEqual(states, [.copied, .idle])
+    }
+
+    @MainActor
+    func testCopyIDConfirmationCancelPreventsStaleDismissal() async {
+        let delay = ManualConfirmationDelay()
+        let delayStarted = expectation(description: "confirmation delay started")
+        let delayReturned = expectation(description: "cancelled delay returned")
+        var states: [PlaceCardCopyIDConfirmationState] = []
+        var dismissCount = 0
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { _ in },
+            announce: { _ in },
+            setState: { states.append($0) },
+            delay: {
+                delayStarted.fulfill()
+                await delay.wait()
+                delayReturned.fulfill()
+            },
+            dismiss: { dismissCount += 1 }
+        )
+
+        controller.activate(placeID: "mt1_cancelled")
+        await fulfillment(of: [delayStarted])
+        controller.cancel()
+        delay.resumeAll()
+        await fulfillment(of: [delayReturned])
+        await Task.yield()
+
+        XCTAssertEqual(dismissCount, 0)
+        XCTAssertEqual(states, [.copied, .idle])
+    }
+
+    @MainActor
+    func testCopyIDConfirmationIgnoresSecondActivationWhileConfirming() async {
+        let delay = ManualConfirmationDelay()
+        let delayStarted = expectation(description: "confirmation delay started")
+        var copiedPayloads: [String] = []
+        let controller = PlaceCardCopyIDConfirmationController(
+            copy: { copiedPayloads.append($0) },
+            announce: { _ in },
+            setState: { _ in },
+            delay: {
+                delayStarted.fulfill()
+                await delay.wait()
+            },
+            dismiss: {}
+        )
+
+        controller.activate(placeID: "mt1_first")
+        await fulfillment(of: [delayStarted])
+        controller.activate(placeID: "mt1_second")
+
+        XCTAssertEqual(copiedPayloads, ["mt1_first"])
+        controller.cancel()
+        delay.resumeAll()
+    }
+
+    @MainActor
     private func makeCoordinator() -> MLNMapViewRepresentable.Coordinator {
         MLNMapViewRepresentable.Coordinator(
             onCameraIdle: { _, _ in },
@@ -5351,6 +5603,25 @@ final class AppShellTests: XCTestCase {
             onStyleWillReload: {},
             onMapLoadFailed: {}
         )
+    }
+}
+
+@MainActor
+private final class ManualConfirmationDelay {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func resumeAll() {
+        let pending = continuations
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume()
+        }
     }
 }
 
