@@ -1797,6 +1797,42 @@ def test_cli_eval_dump_bounds_and_escapes_skipped_row_diagnostics(tmp_path, caps
     assert "\x1b" not in err
     assert "\\x1b" in err
     assert "1 additional skipped row omitted" in err
+    assert len(err) < 7_000
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize("long_cell", ["place-id", "reason"])
+def test_cli_eval_dump_caps_one_very_long_skipped_row_detail(
+    tmp_path, capsys, long_cell
+):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
+    merge_path = tmp_path / "existing.tsv"
+    place_id = "x" * 100_000 if long_cell == "place-id" else EVAL_B
+    label = "yes" if long_cell == "place-id" else "x" * 100_000
+    merge_path.write_text(f"place_id\tarea\tlabel\n{place_id}\tlondon\t{label}\n")
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert len(err) < 1_000
+    assert "..." in err
     assert not out_dir.exists()
 
 

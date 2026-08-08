@@ -38,6 +38,7 @@ _PIPELINE_LOG_DIR_ENV = "MT_PIPELINE_LOG_DIR"
 _MAX_JSON_BYTES = 1_000_000
 _MAX_TSV_BYTES = 10_000_000
 _MAX_MERGE_SKIP_DETAILS = 20
+_MAX_MERGE_SKIP_FIELD_CHARS = 160
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SAFE_LOG_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
@@ -1643,8 +1644,14 @@ def _merge_existing_golden_rows(
     text = _read_text_limited(path, max_bytes=_MAX_TSV_BYTES)
     parsed = golden.parse_labeled_tsv(text)
     if parsed.skipped:
+        def excerpt(value: object) -> str:
+            rendered = repr(value)
+            if len(rendered) <= _MAX_MERGE_SKIP_FIELD_CHARS:
+                return rendered
+            return rendered[: _MAX_MERGE_SKIP_FIELD_CHARS - 3] + "..."
+
         details = "; ".join(
-            f"{ident!r}: {reason}"
+            f"{excerpt(ident)}: {excerpt(reason)}"
             for ident, reason in parsed.skipped[:_MAX_MERGE_SKIP_DETAILS]
         )
         omitted = len(parsed.skipped) - _MAX_MERGE_SKIP_DETAILS

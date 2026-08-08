@@ -106,10 +106,7 @@ def _validate_signals_json(raw: str) -> dict[str, float | None]:
         raise ValueError("signals_json has too many keys")
     signals: dict[str, float | None] = {}
     for key, value in payload.items():
-        if not isinstance(key, str) or not key:
-            raise ValueError("signals_json keys must be non-empty strings")
-        if len(key) > MAX_SIGNAL_KEY_LEN or strip_unsafe_text(key) != key:
-            raise ValueError(f"invalid signals_json key {key!r}")
+        _validate_signal_name(key)
         if value is None:
             signals[key] = None
         elif isinstance(value, int | float) and not isinstance(value, bool):
