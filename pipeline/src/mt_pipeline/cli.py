@@ -1659,6 +1659,8 @@ def _merge_existing_golden_rows(
             noun = "row" if omitted == 1 else "rows"
             details += f"; {omitted} additional skipped {noun} omitted"
         raise ValueError(f"merge-existing parse skipped rows: {details}")
+    if not parsed.rows:
+        raise ValueError("merge-existing artifact contains no rows")
     artifact_areas = {row.area for row in parsed.rows}
     if artifact_areas != {area}:
         raise ValueError(

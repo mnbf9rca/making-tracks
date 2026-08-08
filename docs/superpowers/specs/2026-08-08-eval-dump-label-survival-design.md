@@ -31,6 +31,8 @@ messages it produces today.
    - read the named TSV with the existing 10 MB bounded text reader;
    - parse it with `golden.parse_labeled_tsv`;
    - reject the artifact if any row is skipped;
+   - reject a header-only artifact with a specific empty-artifact error; a first fresh dump omits the
+     merge option;
    - reject the artifact unless every parsed row belongs to the requested area;
    - pass the fresh rows and every parsed active or retired row to `golden.merge_labels`;
    - use `merged + retired` as the row set for both output formats.
@@ -44,7 +46,7 @@ same-version candidate-change rejection continues to apply.
 
 ## Errors and observability
 
-A missing, unreadable, oversized, malformed, partially skipped, or wrong-area merge artifact
+A missing, unreadable, empty, oversized, malformed, partially skipped, or wrong-area merge artifact
 returns a non-zero status before any output is created. The error identifies the merge artifact
 contract rather than presenting the failure as a database dump error.
 
@@ -68,8 +70,8 @@ a refreshed dump:
 - emits a vanished labeled place as inactive in both TSV and JSONL;
 - reports the carried, new, and retired counts.
 
-Boundary tests prove that missing, malformed/skipped, and valid-but-wrong-area artifacts fail before
-the output directory or files exist. A no-option regression pins current fresh-unlabeled output.
+Boundary tests prove that missing, empty, malformed/skipped, and valid-but-wrong-area artifacts fail
+before the output directory or files exist. A no-option regression pins current fresh-unlabeled output.
 Test teeth are demonstrated by bypassing the production merge call: the end-to-end survival test
 must fail.
 

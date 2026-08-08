@@ -50,9 +50,9 @@ uv run mt-pipeline eval dump london \
   --merge-existing docs/superpowers/eval/refresh-v1-golden-london.tsv
 ```
 
-The named file supplies both active and retired annotation history. A missing, malformed, oversized,
-or wrong-area artifact fails before either output is created. Omitting `--merge-existing` produces an
-ordinary fresh unlabeled dump; the command never auto-discovers a prior file.
+The named file supplies both active and retired annotation history. A missing, empty, malformed,
+oversized, or wrong-area artifact fails before either output is created. For a first fresh dump, omit
+`--merge-existing`; the command never auto-discovers a prior file.
 
 ## Source Records
 

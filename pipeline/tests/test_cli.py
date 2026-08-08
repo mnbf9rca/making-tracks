@@ -1690,7 +1690,8 @@ def test_cli_eval_dump_merges_existing_annotation_history(tmp_path, capsys):
 
 
 @pytest.mark.parametrize(
-    "artifact_case", ["missing", "empty-path", "skipped", "wrong-area"]
+    "artifact_case",
+    ["missing", "empty-path", "empty-artifact", "skipped", "wrong-area"],
 )
 def test_cli_eval_dump_rejects_bad_merge_artifact_before_output(
     tmp_path, capsys, artifact_case
@@ -1698,7 +1699,9 @@ def test_cli_eval_dump_rejects_bad_merge_artifact_before_output(
     db = tmp_path / "w.db"
     _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
     merge_path = tmp_path / "existing.tsv"
-    if artifact_case == "skipped":
+    if artifact_case == "empty-artifact":
+        merge_path.write_text("place_id\tarea\tlabel\n")
+    elif artifact_case == "skipped":
         merge_path.write_text("place_id\tarea\tlabel\nmt1_BADID\tlondon\tyes\n")
     elif artifact_case == "wrong-area":
         merge_path.write_text(
@@ -1733,7 +1736,10 @@ def test_cli_eval_dump_rejects_bad_merge_artifact_before_output(
     )
 
     assert rc == 1
-    assert "eval dump merge error:" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "eval dump merge error:" in err
+    if artifact_case == "empty-artifact":
+        assert "contains no rows" in err
     assert not out_dir.exists()
 
 
