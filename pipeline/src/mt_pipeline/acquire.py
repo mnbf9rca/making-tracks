@@ -1817,6 +1817,28 @@ def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[
                 )
             )
             pageview_cache = dest / "pageviews"
+            titles = _wikipedia_titles(
+                paths["wikipedia"], max_titles=max_titles
+            )
+            pageview_phase = progress.PhaseProgress(
+                "acquire.pageviews.title_fetch",
+                region=region_config.region_id,
+                total=len(titles),
+                total_label="titles",
+                heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+                heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+            )
+            pageview_stats = {"processed": 0, "fetched": 0, "cached": 0}
+
+            def observe_pageviews(
+                processed: int, total: int, fetched: int, cached: int
+            ) -> None:
+                pageview_stats.update(
+                    {"processed": processed, "fetched": fetched, "cached": cached}
+                )
+                pageview_phase.tick(
+                    processed, extra=f" fetched={fetched} cached={cached}"
+                )
 
             def fetch_title(title: str, title_window: tuple[str, str]):
                 return fetch_pageviews_for_title(
@@ -1828,14 +1850,23 @@ def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[
                     sleep=time.sleep,
                 )
 
+            pageview_phase.start()
             pageviews.acquire(
-                _wikipedia_titles(paths["wikipedia"], max_titles=max_titles),
+                titles,
                 window,
                 pageview_cache,
                 fetch=fetch_title,
                 enabled=True,
                 sleep=time.sleep,
                 polite_interval_seconds=polite_interval,
+                on_progress=observe_pageviews,
+            )
+            pageview_phase.done(
+                pageview_stats["processed"],
+                extra=(
+                    f" fetched={pageview_stats['fetched']}"
+                    f" cached={pageview_stats['cached']}"
+                ),
             )
             paths["pageviews"] = pageview_cache
     if region_config.sources.get("osm") is True:

@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from mt_pipeline.extractors import pageviews
@@ -58,6 +60,33 @@ def test_acquire_is_resumable_and_cached(tmp_path):
     pageviews.acquire(["A", "B", "C"], window, tmp_path, fetch=fake_fetch, enabled=True)
     assert "A" not in calls
     assert set(calls) == {"B", "C"}
+
+
+def test_acquire_reports_progress_for_cached_and_fetched_titles(tmp_path):
+    window = ("2025-07-14", "2026-07-14")
+    cache_path = pageviews._cache_path(tmp_path, "A", window)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(
+        json.dumps({"title": "A", "window": list(window), "daily": [1]})
+    )
+    events = []
+
+    def fake_fetch(title, title_window):
+        return {"title": title, "window": list(title_window), "daily": [2]}
+
+    count = pageviews.acquire(
+        ["A", "B"],
+        window,
+        tmp_path,
+        fetch=fake_fetch,
+        enabled=True,
+        on_progress=lambda processed, total, fetched, cached: events.append(
+            (processed, total, fetched, cached)
+        ),
+    )
+
+    assert count == 1
+    assert events == [(1, 2, 0, 1), (2, 2, 1, 1)]
 
 
 def test_acquire_cache_key_includes_title_and_window(tmp_path):

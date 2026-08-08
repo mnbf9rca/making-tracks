@@ -500,7 +500,12 @@ def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch
     }
 
 
-def test_acquire_all_runs_pageviews_when_region_opts_in(tmp_path, monkeypatch):
+def test_acquire_all_runs_pageviews_when_region_opts_in(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_RECORDS", 1, raising=False
+    )
     config_path = tmp_path / "acquire_sources.json"
     config_path.write_text(
         json.dumps(
@@ -558,7 +563,9 @@ def test_acquire_all_runs_pageviews_when_region_opts_in(tmp_path, monkeypatch):
         captured["cache_dir"] = cache_dir
         captured["enabled"] = kwargs["enabled"]
         captured["polite_interval_seconds"] = kwargs["polite_interval_seconds"]
-        return 2
+        kwargs["on_progress"](1, 2, 0, 1)
+        kwargs["on_progress"](2, 2, 1, 1)
+        return 1
 
     monkeypatch.setattr(acquire, "acquire_wikipedia", fake_acquire_wikipedia)
     monkeypatch.setattr(acquire, "acquire_registers", lambda *_args, **_kwargs: {})
@@ -574,6 +581,21 @@ def test_acquire_all_runs_pageviews_when_region_opts_in(tmp_path, monkeypatch):
         "enabled": True,
         "polite_interval_seconds": 0.5,
     }
+    err = capsys.readouterr().err
+    assert (
+        "PHASE START acquire.pageviews.title_fetch "
+        "region=malaysia-singapore-brunei titles=2" in err
+    )
+    assert (
+        "PHASE HEARTBEAT acquire.pageviews.title_fetch "
+        "region=malaysia-singapore-brunei processed=1/2" in err
+    )
+    assert "fetched=0 cached=1" in err
+    assert (
+        "PHASE DONE acquire.pageviews.title_fetch "
+        "region=malaysia-singapore-brunei processed=2/2" in err
+    )
+    assert "fetched=1 cached=1" in err
 
 
 def test_acquire_all_skips_pageviews_when_region_opts_out(tmp_path, monkeypatch):
