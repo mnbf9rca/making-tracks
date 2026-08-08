@@ -4,7 +4,7 @@
 
 **Target branch:** `develop`
 
-**Status:** Approved by planner ruling; implementation remains gated on review of this written spec.
+**Status:** Approved and implemented on this branch; pending review.
 
 ## 1. Context and tracker drift
 

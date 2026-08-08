@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import pathlib
+from io import StringIO
 from types import SimpleNamespace
 import urllib.request
 import urllib.response
@@ -70,10 +71,11 @@ def test_get_to_file_writes_bytes(tmp_path, monkeypatch):
 
 
 def test_get_to_file_reports_header_and_cumulative_byte_progress(tmp_path, monkeypatch):
+    body = b"x" * (2 * 65536 + 3)
     monkeypatch.setattr(
         fetch,
         "_opener",
-        lambda _hosts: _HeaderOpener(b"abcdef", {"Content-Length": "6"}),
+        lambda _hosts: _HeaderOpener(body, {"Content-Length": str(len(body))}),
     )
     events = []
 
@@ -81,12 +83,17 @@ def test_get_to_file_reports_header_and_cumulative_byte_progress(tmp_path, monke
         "https://historicengland.org.uk/x",
         tmp_path / "o",
         expected_hosts={"historicengland.org.uk"},
-        max_bytes=10,
+        max_bytes=len(body),
         on_progress=lambda done, total: events.append((done, total)),
     )
 
-    assert written == 6
-    assert events == [(0, 6), (6, 6)]
+    assert written == len(body)
+    assert events == [
+        (0, len(body)),
+        (65536, len(body)),
+        (131072, len(body)),
+        (len(body), len(body)),
+    ]
 
 
 def test_get_to_file_reports_unknown_only_when_content_length_is_absent(
@@ -347,6 +354,110 @@ def test_download_snapshot_default_fetch_uses_conditional_client(tmp_path, monke
         }
     ]
     assert json.loads(path.read_text()) == {"type": "FeatureCollection", "features": []}
+
+
+def test_download_snapshot_not_modified_reports_zero_response_bytes(
+    tmp_path, monkeypatch
+):
+    body = b'{"type":"FeatureCollection","features":[]}'
+    dest = tmp_path / "historic_england.snapshot"
+    dest.write_bytes(body)
+    config = {
+        "historic_england": {
+            "url": "https://historicengland.org.uk/nhle.geojson",
+            "allowed_hosts": ["historicengland.org.uk"],
+        }
+    }
+
+    def fake_conditional_fetch(*_args, **_kwargs):
+        return fetch.ConditionalFetchResult(
+            status="not_modified",
+            size=len(body),
+            sha256=hashlib.sha256(body).hexdigest(),
+            bytes_downloaded=0,
+        )
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    stream = StringIO()
+    telemetry = acquire.progress.PhaseProgress(
+        "acquire.register.historic_england.download",
+        region="united-kingdom",
+        total=None,
+        total_label="bytes",
+        stream=stream,
+    )
+
+    _snapshot.download_snapshot(
+        "historic_england",
+        tmp_path,
+        config=config,
+        enabled=True,
+        telemetry=telemetry,
+    )
+
+    output = stream.getvalue()
+    assert "PHASE HEARTBEAT" not in output
+    assert "processed=0/unknown" in output
+    assert "status=not_modified" in output
+
+
+def test_download_snapshot_retry_resets_missing_content_length_to_unknown(
+    tmp_path, monkeypatch
+):
+    pending = b'{"status":"ExportingData"}'
+    complete = b'{"type":"FeatureCollection","features":[]}'
+    config = {
+        "historic_england": {
+            "url": "https://historicengland.org.uk/nhle.geojson",
+            "allowed_hosts": ["historicengland.org.uk"],
+        }
+    }
+    calls = 0
+
+    def fake_conditional_fetch(url, dest, *, on_progress, **_kwargs):
+        nonlocal calls
+        calls += 1
+        body = pending if calls == 1 else complete
+        total = len(body) if calls == 1 else None
+        on_progress(0, total)
+        pathlib.Path(dest).write_bytes(body)
+        on_progress(len(body), total)
+        return fetch.ConditionalFetchResult(
+            status="downloaded",
+            size=len(body),
+            sha256=hashlib.sha256(body).hexdigest(),
+            bytes_downloaded=len(body),
+        )
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    stream = StringIO()
+    telemetry = acquire.progress.PhaseProgress(
+        "acquire.register.historic_england.download",
+        region="united-kingdom",
+        total=None,
+        total_label="bytes",
+        heartbeat_every_records=1,
+        stream=stream,
+    )
+
+    _snapshot.download_snapshot(
+        "historic_england",
+        tmp_path,
+        config=config,
+        enabled=True,
+        retries=1,
+        sleep=lambda _seconds: None,
+        telemetry=telemetry,
+    )
+
+    output = stream.getvalue()
+    assert calls == 2
+    assert "processed=0/unknown" in output
+    assert f"PHASE DONE acquire.register.historic_england.download region=united-kingdom processed={len(complete)}/unknown" in output
 
 
 def test_acquire_registers_reports_source_specific_byte_progress(

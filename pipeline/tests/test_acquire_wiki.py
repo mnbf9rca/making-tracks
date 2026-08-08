@@ -1,11 +1,13 @@
+import _thread
 import json
+import threading
 import time
 import types
 import urllib.parse
 
 import pytest
 
-from mt_pipeline import acquire, store
+from mt_pipeline import acquire, progress, store
 
 
 def _binding(qid: str, p31: str, lat: float = 1.2, lon: float = 101.3):
@@ -598,6 +600,146 @@ def test_acquire_all_runs_pageviews_when_region_opts_in(
     assert "fetched=1 cached=1" in err
 
 
+def test_acquire_all_pageviews_heartbeats_while_title_request_is_busy(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_SECONDS", 0.01, raising=False
+    )
+    config_path = tmp_path / "acquire_sources.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "wikidata": {},
+                "wikipedia": {},
+                "pageviews": {
+                    "endpoint": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
+                    "allowed_hosts": ["wikimedia.org"],
+                },
+                "osm": {},
+            }
+        )
+    )
+    region_config = types.SimpleNamespace(
+        region_id="united-kingdom",
+        bbox=(-1.0, 50.0, 1.0, 51.0),
+        languages=["en"],
+        sources={"wikidata": False, "wikipedia": True, "osm": False},
+        raw={"pageviews": {"enabled": True}},
+    )
+    wikipedia_snapshot = tmp_path / "wikipedia.snapshot.json"
+
+    def fake_acquire_wikipedia(*_args, **_kwargs):
+        wikipedia_snapshot.write_text(
+            json.dumps(
+                {
+                    "_meta": {
+                        "complete": True,
+                        "retrieved_at": "2026-07-15T08:03:37Z",
+                    },
+                    "lang": "en",
+                    "pages": [{"title": "Alpha", "pageid": 1}],
+                }
+            )
+        )
+        return wikipedia_snapshot
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_fetch(title, window, **_kwargs):
+        started.set()
+        release.wait(1.0)
+        return {"title": title, "window": list(window), "daily": [1]}
+
+    monkeypatch.setattr(acquire, "acquire_wikipedia", fake_acquire_wikipedia)
+    monkeypatch.setattr(acquire, "acquire_registers", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(acquire, "fetch_pageviews_for_title", slow_fetch)
+    errors = []
+
+    def run_acquire_all():
+        try:
+            acquire.acquire_all(
+                tmp_path, region_config=region_config, config_path=config_path
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=run_acquire_all)
+    worker.start()
+    assert started.wait(0.5)
+    time.sleep(0.03)
+    while_busy = capsys.readouterr().err
+    release.set()
+    worker.join(1.0)
+
+    assert not worker.is_alive()
+    assert errors == []
+    assert (
+        "PHASE HEARTBEAT acquire.pageviews.title_fetch "
+        "region=united-kingdom processed=0/1" in while_busy
+    )
+
+
+def test_acquire_all_pageview_failure_does_not_emit_done(
+    tmp_path, capsys, monkeypatch
+):
+    config_path = tmp_path / "acquire_sources.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "wikidata": {},
+                "wikipedia": {},
+                "pageviews": {
+                    "endpoint": "https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article",
+                    "allowed_hosts": ["wikimedia.org"],
+                },
+                "osm": {},
+            }
+        )
+    )
+    region_config = types.SimpleNamespace(
+        region_id="united-kingdom",
+        bbox=(-1.0, 50.0, 1.0, 51.0),
+        languages=["en"],
+        sources={"wikidata": False, "wikipedia": True, "osm": False},
+        raw={"pageviews": {"enabled": True}},
+    )
+    wikipedia_snapshot = tmp_path / "wikipedia.snapshot.json"
+
+    def fake_acquire_wikipedia(*_args, **_kwargs):
+        wikipedia_snapshot.write_text(
+            json.dumps(
+                {
+                    "_meta": {
+                        "complete": True,
+                        "retrieved_at": "2026-07-15T08:03:37Z",
+                    },
+                    "lang": "en",
+                    "pages": [{"title": "Alpha", "pageid": 1}],
+                }
+            )
+        )
+        return wikipedia_snapshot
+
+    monkeypatch.setattr(acquire, "acquire_wikipedia", fake_acquire_wikipedia)
+    monkeypatch.setattr(acquire, "acquire_registers", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        acquire.pageviews,
+        "acquire",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
+
+    with pytest.raises(RuntimeError, match="offline"):
+        acquire.acquire_all(
+            tmp_path, region_config=region_config, config_path=config_path
+        )
+
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.pageviews.title_fetch" in err
+    assert "PHASE DONE acquire.pageviews.title_fetch" not in err
+
+
 def test_acquire_all_skips_pageviews_when_region_opts_out(tmp_path, monkeypatch):
     config_path = tmp_path / "acquire_sources.json"
     config_path.write_text(
@@ -988,6 +1130,47 @@ def test_qid_sitelink_entity_lookup_heartbeats_while_request_is_busy(
         "PHASE HEARTBEAT acquire.qid_sitelink.entity_lookup region=en processed=0/1"
         in capsys.readouterr().err
     )
+
+
+def test_request_heartbeat_wrapper_does_not_join_worker_after_keyboard_interrupt():
+    started = threading.Event()
+    release = threading.Event()
+    phase = progress.PhaseProgress(
+        "acquire.test.request",
+        region="test",
+        total=1,
+        total_label="items",
+        heartbeat_every_seconds=30.0,
+    )
+
+    def blocking_fetch(*_args, **_kwargs):
+        started.set()
+        release.wait(1.0)
+        return {}
+
+    def interrupt_main():
+        assert started.wait(0.5)
+        _thread.interrupt_main()
+
+    threading.Thread(target=interrupt_main, daemon=True).start()
+    began = time.monotonic()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            acquire._retry_json_with_phase_heartbeats(
+                phase=phase,
+                processed=0,
+                extra="",
+                url="https://example.com/data",
+                expected_hosts={"example.com"},
+                max_bytes=100,
+                fetch_json=blocking_fetch,
+                retries=0,
+                sleep=lambda _seconds: None,
+            )
+    finally:
+        release.set()
+
+    assert time.monotonic() - began < 0.5
 
 
 def test_qid_sitelink_acquisition_refreshes_blank_accepted_extracts(tmp_path):
@@ -1428,7 +1611,9 @@ def test_qid_sitelink_acquisition_skips_malformed_page_entries(tmp_path):
     assert [item["pageid"] for item in json.loads(out.read_text())["qid_pages"]] == [42]
 
 
-def test_qid_sitelink_acquisition_rejects_malformed_response_containers(tmp_path):
+def test_qid_sitelink_acquisition_rejects_malformed_response_containers(
+    tmp_path, capsys
+):
     snapshot = tmp_path / "wikipedia.snapshot.json"
     snapshot.write_text(
         json.dumps(
@@ -1468,9 +1653,12 @@ def test_qid_sitelink_acquisition_rejects_malformed_response_containers(tmp_path
             sleep=lambda _seconds: None,
             retrieved_at="2026-07-20T01:00:00Z",
         )
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.qid_sitelink.entity_lookup" in err
+    assert "PHASE DONE acquire.qid_sitelink.entity_lookup" not in err
 
 
-def test_qid_sitelink_acquisition_rejects_malformed_wikipedia_query(tmp_path):
+def test_qid_sitelink_acquisition_rejects_malformed_wikipedia_query(tmp_path, capsys):
     snapshot = tmp_path / "wikipedia.snapshot.json"
     snapshot.write_text(
         json.dumps(
@@ -1510,6 +1698,9 @@ def test_qid_sitelink_acquisition_rejects_malformed_wikipedia_query(tmp_path):
             sleep=lambda _seconds: None,
             retrieved_at="2026-07-20T01:00:00Z",
         )
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.qid_sitelink.page_fetch" in err
+    assert "PHASE DONE acquire.qid_sitelink.page_fetch" not in err
 
 
 def test_qid_sitelink_seeds_from_store_use_lowest_place_id_for_duplicate_qids(tmp_path):

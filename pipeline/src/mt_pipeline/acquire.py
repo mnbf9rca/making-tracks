@@ -37,6 +37,7 @@ _ACQUIRE_HEARTBEAT_EVERY_RECORDS = progress.HEARTBEAT_EVERY_RECORDS
 _ACQUIRE_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 _DOWNLOAD_HEARTBEAT_EVERY_BYTES = 64 * 1024 * 1024
 _DOWNLOAD_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_REQUEST_HEARTBEAT_POLL_SECONDS = 0.1
 _QID_RE = re.compile(r"Q[0-9]+")
 _POINT_RE = re.compile(r"Point\(([-0-9.]+) ([-0-9.]+)\)")
 
@@ -871,6 +872,43 @@ def _write_blank_extract_snapshot(
     return written
 
 
+def _call_with_phase_heartbeats(
+    *,
+    phase: progress.PhaseProgress,
+    processed: int,
+    extra: str | Callable[[], str],
+    call: Callable[[], object],
+) -> object:
+    future: concurrent.futures.Future = concurrent.futures.Future()
+
+    def run() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            result = call()
+        except BaseException as exc:
+            future.set_exception(exc)
+        else:
+            future.set_result(result)
+
+    worker = threading.Thread(
+        target=run,
+        name=f"phase-heartbeat-{phase.name}",
+        daemon=True,
+    )
+    worker.start()
+    while True:
+        try:
+            return future.result(
+                timeout=min(
+                    phase.heartbeat_every_seconds,
+                    _REQUEST_HEARTBEAT_POLL_SECONDS,
+                )
+            )
+        except concurrent.futures.TimeoutError:
+            phase.heartbeat_if_due(processed, extra=extra)
+
+
 def _retry_json_with_phase_heartbeats(
     *,
     phase: progress.PhaseProgress,
@@ -883,25 +921,19 @@ def _retry_json_with_phase_heartbeats(
     retries: int,
     sleep,
 ) -> dict:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            _retry_json,
+    return _call_with_phase_heartbeats(
+        phase=phase,
+        processed=processed,
+        extra=extra,
+        call=lambda: _retry_json(
             url,
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
             retries=retries,
             sleep=sleep,
-        )
-        while True:
-            done, _pending = concurrent.futures.wait(
-                {future},
-                timeout=phase.heartbeat_every_seconds,
-                return_when=concurrent.futures.FIRST_COMPLETED,
-            )
-            if done:
-                return future.result()
-            phase.heartbeat_if_due(processed, extra=extra)
+        ),
+    )
 
 
 def _commons_upload_url(value: object) -> str | None:
@@ -1841,13 +1873,21 @@ def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[
                 )
 
             def fetch_title(title: str, title_window: tuple[str, str]):
-                return fetch_pageviews_for_title(
-                    title,
-                    title_window,
-                    language=language,
-                    config=pageview_config,
-                    retries=retries,
-                    sleep=time.sleep,
+                return _call_with_phase_heartbeats(
+                    phase=pageview_phase,
+                    processed=pageview_stats["processed"],
+                    extra=lambda: (
+                        f" fetched={pageview_stats['fetched']}"
+                        f" cached={pageview_stats['cached']}"
+                    ),
+                    call=lambda: fetch_pageviews_for_title(
+                        title,
+                        title_window,
+                        language=language,
+                        config=pageview_config,
+                        retries=retries,
+                        sleep=time.sleep,
+                    ),
                 )
 
             pageview_phase.start()
