@@ -1591,6 +1591,7 @@ def acquire_wikidata_redirect_map(
     retries: int = 3,
     sleep=time.sleep,
     retrieved_at: str | None = None,
+    region: str = "unknown",
 ) -> pathlib.Path:
     retrieved_at = retrieved_at or _now()
     if _parse_time(retrieved_at) < _parse_time(wikidata_retrieved_at):
@@ -1603,13 +1604,26 @@ def acquire_wikidata_redirect_map(
     max_bytes = int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     redirects: dict[str, str] = {}
     segments = []
+    known_qids = sorted({qid for qid in qids if _QID_RE.fullmatch(qid)})
+    phase = progress.PhaseProgress(
+        "acquire.wikidata.redirect_map",
+        region=region,
+        total=len(known_qids),
+        total_label="qids",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    phase.start()
 
     try:
-        known_qids = sorted({qid for qid in qids if _QID_RE.fullmatch(qid)})
         for qid_chunk in _chunks(known_qids, qid_chunk_size):
             query = _redirect_query(qid_chunk)
-            data = _retry_json(
-                _endpoint_url(endpoint, {"query": query, "format": "json"}),
+            data = _retry_json_with_phase_heartbeats(
+                phase=phase,
+                processed=processed,
+                extra=lambda: f" redirects={len(redirects)}",
+                url=_endpoint_url(endpoint, {"query": query, "format": "json"}),
                 expected_hosts=expected_hosts,
                 max_bytes=max_bytes,
                 fetch_json=fetch_json,
@@ -1628,12 +1642,14 @@ def acquire_wikidata_redirect_map(
                 if _QID_RE.fullmatch(source) and _QID_RE.fullmatch(target):
                     redirects[source] = target
             segments.append({"qids": qid_chunk, "count": len(rows), "query": query})
+            processed += len(qid_chunk)
+            phase.tick(processed, extra=f" redirects={len(redirects)}")
     except Exception:
         out.unlink(missing_ok=True)
         out.with_name(f".{out.name}.tmp").unlink(missing_ok=True)
         raise
 
-    return _atomic_write_json(
+    written = _atomic_write_json(
         out,
         {
             "_meta": {
@@ -1646,6 +1662,8 @@ def acquire_wikidata_redirect_map(
             "redirects": dict(sorted(redirects.items())),
         },
     )
+    phase.done(processed, extra=f" redirects={len(redirects)}")
+    return written
 
 
 def wikidata_snapshot_retrieved_at(snapshot_path) -> str:

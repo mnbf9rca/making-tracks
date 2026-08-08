@@ -1544,7 +1544,12 @@ def test_wikipedia_acquisition_fails_loudly_on_api_error(tmp_path):
         )
 
 
-def test_wikidata_redirect_map_segments_known_qids_and_marks_complete(tmp_path):
+def test_wikidata_redirect_map_segments_known_qids_and_marks_complete(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_RECORDS", 1, raising=False
+    )
     calls = []
 
     def fetch_json(url, *, expected_hosts, max_bytes, headers):
@@ -1576,17 +1581,64 @@ def test_wikidata_redirect_map_segments_known_qids_and_marks_complete(tmp_path):
         },
         wikidata_retrieved_at="2026-07-15T00:00:00Z",
         fetch_json=fetch_json,
-        qid_chunk_size=2,
+        qid_chunk_size=1,
         sleep=lambda _seconds: None,
         retrieved_at="2026-07-15T00:00:01Z",
+        region="united-kingdom",
     )
 
     data = json.loads(out.read_text())
     assert data["_meta"]["complete"] is True
     assert data["_meta"]["wikidata_retrieved_at"] == "2026-07-15T00:00:00Z"
     assert data["redirects"] == {"Q1": "Q10"}
-    assert len(data["_meta"]["segments"]) == 2
-    assert len(calls) == 2
+    assert len(data["_meta"]["segments"]) == 3
+    assert len(calls) == 3
+    err = capsys.readouterr().err
+    assert (
+        "PHASE START acquire.wikidata.redirect_map region=united-kingdom qids=3"
+        in err
+    )
+    assert (
+        "PHASE HEARTBEAT acquire.wikidata.redirect_map region=united-kingdom processed=1/3"
+        in err
+    )
+    assert "redirects=1" in err
+    assert (
+        "PHASE DONE acquire.wikidata.redirect_map region=united-kingdom processed=3/3"
+        in err
+    )
+
+
+def test_redirect_map_does_not_emit_done_when_snapshot_write_fails(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_RECORDS", 1, raising=False
+    )
+    monkeypatch.setattr(
+        acquire,
+        "_atomic_write_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        acquire.acquire_wikidata_redirect_map(
+            tmp_path,
+            qids=["Q1"],
+            config={
+                "endpoint": "https://query.wikidata.org/sparql",
+                "allowed_hosts": ["query.wikidata.org"],
+            },
+            wikidata_retrieved_at="2026-07-15T00:00:00Z",
+            fetch_json=lambda *_args, **_kwargs: {"results": {"bindings": []}},
+            sleep=lambda _seconds: None,
+            retrieved_at="2026-07-15T00:00:01Z",
+            region="united-kingdom",
+        )
+
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.wikidata.redirect_map" in err
+    assert "PHASE DONE acquire.wikidata.redirect_map" not in err
 
 
 def test_redirect_map_refuses_to_publish_if_older_than_wikidata(tmp_path):
