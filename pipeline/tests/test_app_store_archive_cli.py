@@ -291,6 +291,77 @@ def test_real_script_exposes_publish_and_retrieve_help(tmp_path: Path):
     assert "retrieve" in result.stdout
 
 
+@pytest.mark.parametrize(
+    ("command", "expected_usage"),
+    [
+        (
+            "publish",
+            "usage: app-store-archive publish [-h] --archive ARCHIVE",
+        ),
+        (
+            "retrieve",
+            (
+                "usage: app-store-archive retrieve [-h] --version VERSION "
+                "--build BUILD\n"
+                "                                  --destination DESTINATION "
+                "[--sha SHA]"
+            ),
+        ),
+    ],
+)
+def test_real_script_help_exposes_documented_operands_only(
+    command: str,
+    expected_usage: str,
+):
+    repo_root = Path(__file__).resolve().parents[2]
+
+    result = subprocess.run(
+        [
+            str(repo_root / ".venv/bin/python"),
+            "scripts/app-store-archive.py",
+            command,
+            "--help",
+        ],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split("\n\n", 1)[0] == expected_usage
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["delete"],
+        ["upload"],
+        ["export"],
+        ["publish", "--archive", "/tmp/archive.xcarchive", "--upload"],
+        ["publish", "--archive", "/tmp/archive.xcarchive", "--export"],
+        ["publish", "--archive", "/tmp/archive.xcarchive", "--apple-id", "x"],
+        ["publish", "--archive", "/tmp/archive.xcarchive", "--password", "x"],
+    ],
+)
+def test_real_script_rejects_unsupported_release_actions_and_credentials(
+    arguments: list[str],
+):
+    repo_root = Path(__file__).resolve().parents[2]
+
+    result = subprocess.run(
+        [str(repo_root / ".venv/bin/python"), "scripts/app-store-archive.py", *arguments],
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "usage: app-store-archive" in result.stderr
+
+
 def _layout(tmp_path: Path) -> Path:
     layout = tmp_path / "r2_layout.json"
     layout.write_text(

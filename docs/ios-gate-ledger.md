@@ -36,6 +36,10 @@ DerivedData never belongs under `/tmp`, `/private/tmp`, `/var/tmp`, or macOS's p
 
 ### Local result-artifact retention
 
+App Store `.xcarchive` retention is governed by [`docs/app-store-release.md`](app-store-release.md).
+Those archives live in caller-owned Application Support and private R2, never carry release-gate
+markers, and are never eligible for the gate's 24-hour pruning.
+
 Default local `full`, `test`, and `enumerate` runs place their artifacts in unique owned directories below
 `/private/tmp/release-gate-<validated simulator UUID>/runs/`. The gate writes an ownership marker before
 Xcode and a success marker only after every requested phase succeeds. A later successful, fully default
