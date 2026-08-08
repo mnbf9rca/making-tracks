@@ -211,13 +211,16 @@ def _archive_tree_digest(root: Path) -> str:
         relative = path.relative_to(root).as_posix().encode("utf-8")
         if path.is_symlink():
             raise OSError("symlink in archive tree")
+        mode = path.stat().st_mode & 0o7777
         if path.is_dir():
-            digest.update(b"D\0" + relative + b"\0")
+            digest.update(b"D\0" + relative + b"\0" + oct(mode).encode("ascii") + b"\0")
         elif path.is_file():
             file_digest, byte_count = sha256_file(path)
             digest.update(
                 b"F\0"
                 + relative
+                + b"\0"
+                + oct(mode).encode("ascii")
                 + b"\0"
                 + str(byte_count).encode("ascii")
                 + b"\0"

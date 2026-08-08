@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 from dataclasses import replace
 from pathlib import Path
 
@@ -341,6 +342,34 @@ def test_existing_leaf_with_tampered_uploadable_archive_is_rejected(tmp_path: Pa
         )
 
     assert existing_binary.read_bytes() == b"tampered-uploadable-archive"
+    assert len(list(first.leaf.parent.glob(".archive-staging-*"))) == 1
+
+
+def test_existing_leaf_with_mode_drift_is_rejected(tmp_path: Path):
+    fixture = make_archive(tmp_path / "source")
+    identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
+    application_support = tmp_path / "Application Support"
+    first = stage_archive(
+        identity,
+        application_support,
+        CAPTURED_AT,
+        run=FakeDittoCommands().run,
+    )
+    existing_binary = (
+        first.archive / "Products/Applications/MakingTracks.app/MakingTracks"
+    )
+    original_mode = existing_binary.stat().st_mode
+    existing_binary.chmod(original_mode ^ stat.S_IXUSR)
+
+    with pytest.raises(StagingError, match="different archive"):
+        stage_archive(
+            identity,
+            application_support,
+            "2026-08-07T00:01:00Z",
+            run=FakeDittoCommands().run,
+        )
+
+    assert existing_binary.stat().st_mode == (original_mode ^ stat.S_IXUSR)
     assert len(list(first.leaf.parent.glob(".archive-staging-*"))) == 1
 
 
