@@ -33,6 +33,8 @@ _WIKIPEDIA_HEARTBEAT_EVERY_PAGES = 10_000
 _WIKIPEDIA_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 _BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES = 10_000
 _BLANK_EXTRACT_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_ACQUIRE_HEARTBEAT_EVERY_RECORDS = progress.HEARTBEAT_EVERY_RECORDS
+_ACQUIRE_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 _QID_RE = re.compile(r"Q[0-9]+")
 _POINT_RE = re.compile(r"Point\(([-0-9.]+) ([-0-9.]+)\)")
 
@@ -321,6 +323,7 @@ def acquire_wikidata(
     retries: int = 6,
     sleep=time.sleep,
     retrieved_at: str | None = None,
+    region: str = "unknown",
 ) -> pathlib.Path:
     dest = _ensure_dir(dest_dir)
     out = snapshot_paths(dest)["wikidata"]
@@ -329,14 +332,29 @@ def acquire_wikidata(
     max_bytes = int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     bindings = []
     segments = []
+    qid_chunks = _chunks(sorted(class_qids), class_chunk_size)
+    tiles = bbox_tiles(bbox, tile_degrees=tile_degrees)
+    phase = progress.PhaseProgress(
+        "acquire.wikidata.bbox",
+        region=region,
+        total=len(qid_chunks) * len(tiles),
+        total_label="segments",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    phase.start()
 
     try:
-        for qid_chunk in _chunks(sorted(class_qids), class_chunk_size):
-            for tile in bbox_tiles(bbox, tile_degrees=tile_degrees):
+        for qid_chunk in qid_chunks:
+            for tile in tiles:
                 query = _wdqs_query(qid_chunk, tile)
                 url = _endpoint_url(endpoint, {"query": query, "format": "json"})
-                data = _retry_json(
-                    url,
+                data = _retry_json_with_phase_heartbeats(
+                    phase=phase,
+                    processed=processed,
+                    extra=lambda: f" bindings={len(bindings)}",
+                    url=url,
                     expected_hosts=expected_hosts,
                     max_bytes=max_bytes,
                     fetch_json=fetch_json,
@@ -358,12 +376,14 @@ def acquire_wikidata(
                         "query": query,
                     }
                 )
+                processed += 1
+                phase.tick(processed, extra=f" bindings={len(bindings)}")
     except Exception:
         out.unlink(missing_ok=True)
         out.with_name(f".{out.name}.tmp").unlink(missing_ok=True)
         raise
 
-    return _atomic_write_json(
+    written = _atomic_write_json(
         out,
         {
             "_meta": {
@@ -388,6 +408,8 @@ def acquire_wikidata(
             "results": {"bindings": bindings},
         },
     )
+    phase.done(processed, extra=f" bindings={len(bindings)}")
+    return written
 
 
 def _wiki_geosearch_url(endpoint: str, tile) -> str:
@@ -1667,6 +1689,7 @@ def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[
             class_qids=load_class_qids(),
             config=wikidata_options,
             tile_degrees=float(wikidata_options.get("tile_degrees", 1.0)),
+            region=region_config.region_id,
         )
     if region_config.sources.get("wikipedia") is True:
         language = region_config.languages[0]

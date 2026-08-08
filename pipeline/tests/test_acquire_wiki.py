@@ -45,7 +45,10 @@ def test_bbox_tiles_cover_bbox_deterministically():
     ]
 
 
-def test_wikidata_acquisition_segments_and_marks_complete(tmp_path):
+def test_wikidata_acquisition_segments_and_marks_complete(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_RECORDS", 1, raising=False
+    )
     calls = []
 
     def fetch_json(url, *, expected_hosts, max_bytes, headers):
@@ -79,6 +82,7 @@ def test_wikidata_acquisition_segments_and_marks_complete(tmp_path):
         tile_degrees=1.0,
         sleep=lambda _seconds: None,
         retrieved_at="2026-07-15T00:00:00Z",
+        region="united-kingdom",
     )
 
     data = json.loads(out.read_text())
@@ -90,6 +94,46 @@ def test_wikidata_acquisition_segments_and_marks_complete(tmp_path):
     first = data["results"]["bindings"][0]
     assert first["p31"]["value"] == "http://www.wikidata.org/entity/Q123"
     assert first["matched_class"]["value"] == "http://www.wikidata.org/entity/Q33506"
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.wikidata.bbox region=united-kingdom segments=4" in err
+    assert (
+        "PHASE HEARTBEAT acquire.wikidata.bbox region=united-kingdom processed=1/4"
+        in err
+    )
+    assert "bindings=1" in err
+    assert "PHASE DONE acquire.wikidata.bbox region=united-kingdom processed=4/4" in err
+
+
+def test_wikidata_acquisition_does_not_emit_done_when_snapshot_write_fails(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_RECORDS", 1, raising=False
+    )
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(acquire, "_atomic_write_json", fail_write)
+
+    with pytest.raises(OSError, match="disk full"):
+        acquire.acquire_wikidata(
+            tmp_path,
+            bbox=(100.0, 1.0, 101.0, 2.0),
+            class_qids=["Q33506"],
+            config={
+                "endpoint": "https://query.wikidata.org/sparql",
+                "allowed_hosts": ["query.wikidata.org"],
+            },
+            fetch_json=lambda *_args, **_kwargs: {"results": {"bindings": []}},
+            sleep=lambda _seconds: None,
+            retrieved_at="2026-07-15T00:00:00Z",
+            region="united-kingdom",
+        )
+
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.wikidata.bbox" in err
+    assert "PHASE DONE acquire.wikidata.bbox" not in err
 
 
 def test_wikidata_acquisition_normalizes_coord_literals(tmp_path):
@@ -422,13 +466,16 @@ def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch
     )
     captured = {}
 
-    def fake_acquire_wikidata(_dest, *, bbox, class_qids, config, tile_degrees):
+    def fake_acquire_wikidata(
+        _dest, *, bbox, class_qids, config, tile_degrees, region
+    ):
         captured.update(
             {
                 "bbox": bbox,
                 "class_qids": class_qids,
                 "config": config,
                 "tile_degrees": tile_degrees,
+                "region": region,
             }
         )
         return tmp_path / "wikidata.snapshot.json"
@@ -449,6 +496,7 @@ def test_acquire_all_applies_region_wikidata_tile_override(tmp_path, monkeypatch
             "tile_degrees": 0.5,
         },
         "tile_degrees": 0.5,
+        "region": "united-kingdom",
     }
 
 
