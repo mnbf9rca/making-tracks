@@ -101,6 +101,48 @@ def test_publish_invalid_archive_fails_before_local_or_remote_mutation(tmp_path:
     assert client.calls == []
 
 
+def test_publish_rejects_source_mutated_at_copy_boundary_before_ready(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+):
+    fixture = make_archive(tmp_path / "source")
+    commands = ReleaseCommands(fixture.commands)
+    original_ditto_run = commands.ditto.run
+
+    def mutate_source_during_copy(args: Sequence[str]) -> str:
+        if len(args) == 3 and args[0] == "ditto":
+            fixture.app_binary.write_bytes(b"mutated-after-inspection")
+        return original_ditto_run(args)
+
+    commands.ditto.run = mutate_source_during_copy
+    client = InMemoryS3()
+    application_support = tmp_path / "Application Support"
+    layout = _layout(tmp_path)
+
+    def publish(archive_path: Path, **_kwargs):
+        return publish_archive(
+            archive_path,
+            repo_root=tmp_path,
+            application_support_root=application_support,
+            layout_path=layout,
+            client=client,
+            captured_at="2026-08-07T00:00:00Z",
+            run=commands.run,
+        )
+
+    monkeypatch.setattr(cli, "client_from_environment", lambda: client)
+    monkeypatch.setattr(cli, "publish_archive", publish)
+
+    exit_code = cli.main(["publish", "--archive", str(fixture.archive)])
+
+    output = capsys.readouterr()
+    assert exit_code == 1
+    assert "READY FOR APP STORE UPLOAD" not in output.out
+    assert "READY FOR APP STORE UPLOAD" not in output.err
+    assert client.calls == []
+
+
 def test_retrieve_downloads_extracts_and_revalidates_archive(tmp_path: Path):
     fixture = make_archive(tmp_path / "source")
     commands = ReleaseCommands(fixture.commands)
@@ -228,7 +270,8 @@ def test_cli_publish_prints_ready_only_after_workflow_result(
 
     output = capsys.readouterr()
     assert exit_code == 0
-    assert output.err == ""
+    assert "PHASE START app_store_archive.copy " in output.err
+    assert "PHASE DONE app_store_archive.download " in output.err
     assert output.out == (
         "READY FOR APP STORE UPLOAD\n"
         "version: 1.0\n"

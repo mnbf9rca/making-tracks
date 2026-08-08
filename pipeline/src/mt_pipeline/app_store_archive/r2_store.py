@@ -23,6 +23,7 @@ from .model import (
     validate_full_sha,
     validate_key_component,
 )
+from .progress import run_blocking_phase
 from .staging import LocalArtifact
 
 
@@ -203,7 +204,11 @@ class R2ArchiveStore:
         if not isinstance(archive_object, Mapping):
             raise ArchiveStorageError("invalid archive manifest")
         archive_zip = root / "archive.xcarchive.zip"
-        self._download_to_path(str(archive_object["key"]), archive_zip)
+        self._download_to_path(
+            str(archive_object["key"]),
+            archive_zip,
+            expected_bytes=archive_object["bytes"],
+        )
         try:
             digest, byte_count = sha256_file(archive_zip)
         except OSError as exc:
@@ -279,13 +284,20 @@ class R2ArchiveStore:
             )
         except _MissingObject:
             try:
-                with source_path.open("rb") as source:
-                    self.client.put_object(
-                        Bucket=self.bucket,
-                        Key=key,
-                        Body=source,
-                        IfNoneMatch="*",
-                    )
+                def upload() -> None:
+                    with source_path.open("rb") as source:
+                        self.client.put_object(
+                            Bucket=self.bucket,
+                            Key=key,
+                            Body=source,
+                            IfNoneMatch="*",
+                        )
+
+                run_blocking_phase(
+                    "app_store_archive.upload",
+                    total_bytes=expected_bytes,
+                    operation=upload,
+                )
             except Exception as exc:
                 if not _is_error(exc, "PreconditionFailed", "412"):
                     raise ArchiveStorageError("immutable archive object upload failed") from exc
@@ -327,7 +339,12 @@ class R2ArchiveStore:
         os.close(descriptor)
         path = Path(raw_path)
         try:
-            self._download_to_path(key, path, replace=True)
+            self._download_to_path(
+                key,
+                path,
+                replace=True,
+                expected_bytes=expected_bytes,
+            )
             digest, byte_count = sha256_file(path)
             return digest == expected_digest and byte_count == expected_bytes
         except _MissingObject:
@@ -335,7 +352,21 @@ class R2ArchiveStore:
         except OSError as exc:
             raise ArchiveStorageError("archive object verification failed") from exc
 
-    def _download_to_path(self, key: str, path: Path, *, replace: bool = False) -> None:
+    def _download_to_path(
+        self,
+        key: str,
+        path: Path,
+        *,
+        replace: bool = False,
+        expected_bytes: int | None = None,
+    ) -> None:
+        run_blocking_phase(
+            "app_store_archive.download",
+            total_bytes=expected_bytes,
+            operation=lambda: self._download_to_path_now(key, path, replace=replace),
+        )
+
+    def _download_to_path_now(self, key: str, path: Path, *, replace: bool) -> None:
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
         except Exception as exc:

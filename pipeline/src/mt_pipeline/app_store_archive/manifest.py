@@ -107,11 +107,13 @@ def parse_manifest(
     expected_sha: str,
 ) -> Mapping[str, object]:
     try:
-        value = json.loads(data.decode("utf-8"))
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object)
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
         raise ManifestValidationError("invalid manifest JSON") from exc
     if not isinstance(value, dict):
         raise ManifestValidationError("invalid manifest fields")
+    if serialize_manifest(value) != data:
+        raise ManifestValidationError("manifest JSON is not canonical")
     _require_fields(value, _TOP_LEVEL_FIELDS, "manifest")
 
     version = _safe_component(_required_string(value, "version", "version"), "version")
@@ -195,6 +197,15 @@ def _require_fields(
 ) -> None:
     if set(value) != expected:
         raise ManifestValidationError(f"invalid {label} fields")
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ManifestValidationError("manifest JSON has duplicate keys")
+        value[key] = item
+    return value
 
 
 def _required_string(

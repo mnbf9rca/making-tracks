@@ -19,6 +19,10 @@ only place for signing, validation, upload, review submission, and release promo
 3. Stop unless the command exits successfully and prints `READY FOR APP STORE UPLOAD`. Record its
    `version`, `build`, full `git_sha`, `local_archive`, `remote_prefix`, `archive_sha256`, and
    `dsym_uuids` fields with the release record.
+
+   Long local copy/ZIP and R2 upload/download work reports liveness only on stderr: `PHASE START`, then
+   every 30 seconds at most `PHASE HEARTBEAT ... processed=<done>/<total> rate=<bytes>/s elapsed=<seconds>s`,
+   and `PHASE DONE`. These progress lines never replace or alter the stdout readiness block.
 4. Open the exact archive named by `local_archive`—the retained copy under
    `$HOME/Library/Application Support/making-tracks-releases/archives/<version>/<build>/<full-sha>/`—in
    Xcode Organizer and upload that copy. Do not upload the original Organizer-path archive after

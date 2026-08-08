@@ -19,6 +19,9 @@
 - Build the archive object before `manifest.json`, upload the archive first, upload the manifest last, and print `READY FOR APP STORE UPLOAD` only after fresh remote downloads reproduce the local byte counts and SHA-256 digests.
 - The operator uploads the retained Application Support `.xcarchive`, not the original Organizer path. Local deletion is documented only after App Store Connect acceptance and a successful fresh retrieval; production code exposes no delete command.
 - R2 credentials remain environment-only behind `op run --env-file=.env.tpl`. CLI and exception output name missing variable names but never credential values.
+- Copy, ZIP, upload, and fresh-download liveness uses the existing stderr `PhaseProgress` format: START/DONE
+  boundaries and a `processed=<done>/<total>` rate/elapsed heartbeat at least every 30 seconds; stdout
+  remains the stable operator result contract.
 - Follow strict RED → GREEN → REFACTOR. Every test invokes production functions or the production CLI; no test reads production source text as its oracle.
 - Final publication requires rebasing onto an `ios` branch that contains #633. Until then, slice checkpoints use their focused suites and name the 26 full-suite failures as the pre-#633 release-gate fixture's inherited-signing defect. After that rebase, the full pipeline bar is zero failures with only the live-provider skip at the actual collected count; do not reuse a memorized count.
 - Before final review, mutate each critical production guard one at a time, prove its named test fails for the intended reason, restore it, prove GREEN, and record the command/result in `docs/superpowers/reports/2026-08-07-app-store-archive-mutation-teeth.md`.
@@ -33,6 +36,7 @@
 - `pipeline/src/mt_pipeline/app_store_archive/manifest.py`: exact v1 manifest assembly, deterministic serialization, and strict retrieval validation.
 - `pipeline/src/mt_pipeline/app_store_archive/staging.py`: caller-owned Application Support copy/package lifecycle and idempotent collision checks.
 - `pipeline/src/mt_pipeline/app_store_archive/r2_store.py`: private-bucket lookup, immutable conditional writes, object round trips, and exact version/build/SHA discovery.
+- `pipeline/src/mt_pipeline/app_store_archive/progress.py`: existing-format blocking transfer liveness telemetry.
 - `pipeline/src/mt_pipeline/app_store_archive/workflow.py`: publish/retrieve orchestration and readiness/recovery result objects.
 - `pipeline/src/mt_pipeline/app_store_archive/cli.py`: argument parsing, stable redacted errors, and operator output.
 - `scripts/app-store-archive.py`: executable import shim into the packaged CLI.

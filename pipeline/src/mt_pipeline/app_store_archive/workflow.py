@@ -21,7 +21,12 @@ from .r2_store import (
     RemotePublication,
     private_bucket,
 )
-from .staging import LocalArtifact, _rename_no_replace, stage_archive
+from .staging import (
+    LocalArtifact,
+    _archive_tree_digest,
+    _rename_no_replace,
+    stage_archive,
+)
 
 
 class WorkflowError(AppStoreArchiveError):
@@ -53,7 +58,15 @@ def publish_archive(
     run: CommandRunner = run_command,
 ) -> PublishResult:
     identity = inspect_archive(archive_path, repo_root, run=run)
-    local = stage_archive(identity, application_support_root, captured_at, run=run)
+    source_tree_digest = _archive_tree_digest(identity.archive_path)
+    local = stage_archive(
+        identity,
+        application_support_root,
+        captured_at,
+        run=run,
+        repo_root=repo_root,
+        source_tree_digest=source_tree_digest,
+    )
     store = R2ArchiveStore(client, private_bucket(layout_path))
     remote = store.publish(local)
     return PublishResult(identity=identity, local=local, remote=remote)

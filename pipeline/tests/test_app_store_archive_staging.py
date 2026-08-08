@@ -80,6 +80,16 @@ def test_parse_manifest_returns_valid_exact_schema():
     assert parsed == manifest
 
 
+def test_parse_manifest_rejects_noncanonical_or_duplicate_key_bytes():
+    manifest = _valid_manifest()
+    noncanonical = json.dumps(manifest, sort_keys=True).encode("utf-8") + b"\n"
+    duplicate_key = _encode(manifest)[:-2] + b',"version":"1.0"}\n'
+
+    for data in (noncanonical, duplicate_key):
+        with pytest.raises(ManifestValidationError, match="canonical|duplicate"):
+            parse_manifest(data, "1.0", "1", FULL_GIT_SHA)
+
+
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -230,6 +240,27 @@ def test_stage_archive_builds_caller_owned_leaf_without_gate_markers(tmp_path: P
             str(staged_zip),
         ),
     ]
+
+
+def test_stage_archive_emits_copy_and_zip_phase_boundaries(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    fixture = make_archive(tmp_path / "source")
+    identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
+
+    stage_archive(
+        identity,
+        tmp_path / "Application Support",
+        CAPTURED_AT,
+        run=FakeDittoCommands().run,
+    )
+
+    lines = capsys.readouterr().err.splitlines()
+    assert any(line.startswith("PHASE START app_store_archive.copy ") for line in lines)
+    assert any(line.startswith("PHASE DONE app_store_archive.copy ") for line in lines)
+    assert any(line.startswith("PHASE START app_store_archive.zip ") for line in lines)
+    assert any(line.startswith("PHASE DONE app_store_archive.zip ") for line in lines)
 
 
 def test_stage_archive_rejects_symlink_application_support_root(tmp_path: Path):
@@ -445,6 +476,31 @@ def test_existing_identical_leaf_is_idempotent_without_replacement(tmp_path: Pat
     assert second.leaf.stat().st_ino == inode
     assert second.manifest_bytes == first.manifest_bytes
     assert list(first.leaf.parent.glob(".archive-staging-*")) == []
+
+
+def test_existing_leaf_is_idempotent_when_capture_xcode_changes(tmp_path: Path):
+    fixture = make_archive(tmp_path / "source")
+    application_support = tmp_path / "Application Support"
+    first_identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
+    first = stage_archive(
+        first_identity,
+        application_support,
+        CAPTURED_AT,
+        run=FakeDittoCommands().run,
+    )
+    fixture.commands.xcode_output = "Xcode 17.0\nBuild version 17A1\n"
+    retry_identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
+
+    second = stage_archive(
+        retry_identity,
+        application_support,
+        "2026-08-07T00:01:00Z",
+        run=FakeDittoCommands().run,
+    )
+
+    assert second.leaf == first.leaf
+    assert second.manifest_bytes == first.manifest_bytes
+    assert first.manifest_path.read_bytes() == first.manifest_bytes
 
 
 def test_rename_collision_preserves_staging_and_does_not_replace_final_leaf(

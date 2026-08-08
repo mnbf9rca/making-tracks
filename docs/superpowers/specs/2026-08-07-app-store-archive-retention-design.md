@@ -65,6 +65,17 @@ The tool does not invoke `xcodebuild archive`, `xcodebuild -exportArchive`, App 
 upload APIs, CoreSimulator, `sim-lock.sh`, or `release-gate.sh`. It receives an Organizer-produced archive
 and proves that archive is safe to use for the subsequent human upload.
 
+### Long-transfer telemetry
+
+Copy, ZIP packaging, immutable upload, and every fresh verification download emit the repository's
+existing `PhaseProgress` protocol to stderr. Each phase prints `PHASE START <name>
+region=app-store-archive bytes=<total|unknown>`, then—while incomplete—`PHASE HEARTBEAT <name>
+region=app-store-archive processed=<done>/<total|unknown> rate=<bytes>/s elapsed=<seconds>s` at least
+every 30 seconds, followed by `PHASE DONE` with the same phase and byte fields. A blocking operation that
+cannot expose intermediate bytes truthfully reports zero processed until it returns; it must still emit
+the 30-second liveness heartbeat. The stable CLI result blocks, including `READY FOR APP STORE UPLOAD`,
+remain stdout-only.
+
 ## Archive identity and symbolication gate
 
 Before copying or uploading anything, `publish` validates the selected path and archive:
