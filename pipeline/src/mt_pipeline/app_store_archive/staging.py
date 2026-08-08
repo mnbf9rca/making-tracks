@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import os
 import shutil
@@ -123,7 +125,7 @@ def stage_archive(
             manifest,
         )
     try:
-        staging.rename(final_leaf)
+        _rename_no_replace(staging, final_leaf)
     except OSError as exc:
         raise StagingError(f"archive rename failed; preserved at {staging}") from exc
     _fsync_directory(parent)
@@ -181,6 +183,15 @@ def _accept_existing_or_preserve(
         raise StagingError(
             f"existing leaf contains a different archive; staging preserved at {candidate.leaf}"
         )
+    try:
+        if _archive_tree_digest(existing_archive) != _archive_tree_digest(candidate.archive):
+            raise StagingError(
+                f"existing leaf contains a different archive; staging preserved at {candidate.leaf}"
+            )
+    except OSError as exc:
+        raise StagingError(
+            f"existing archive is invalid; staging preserved at {candidate.leaf}"
+        ) from exc
 
     shutil.rmtree(candidate.leaf)
     return _artifact_at(final_leaf, existing_bytes)
@@ -190,6 +201,44 @@ def _without_capture(value: Mapping[str, object]) -> dict[str, object]:
     comparable = dict(value)
     comparable.pop("captured_at_utc", None)
     return comparable
+
+
+def _archive_tree_digest(root: Path) -> str:
+    if root.is_symlink() or not root.is_dir():
+        raise OSError("invalid archive tree")
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        if path.is_symlink():
+            raise OSError("symlink in archive tree")
+        if path.is_dir():
+            digest.update(b"D\0" + relative + b"\0")
+        elif path.is_file():
+            file_digest, byte_count = sha256_file(path)
+            digest.update(
+                b"F\0"
+                + relative
+                + b"\0"
+                + str(byte_count).encode("ascii")
+                + b"\0"
+                + file_digest.encode("ascii")
+                + b"\0"
+            )
+        else:
+            raise OSError("invalid archive tree entry")
+    return digest.hexdigest()
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    try:
+        renamex_np = ctypes.CDLL(None, use_errno=True).renamex_np
+    except AttributeError as exc:
+        raise OSError(errno.ENOTSUP, "no-replace rename is unavailable") from exc
+    renamex_np.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    renamex_np.restype = ctypes.c_int
+    if renamex_np(os.fsencode(source), os.fsencode(destination), 0x00000004) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), destination)
 
 
 def _artifact_at(leaf: Path, manifest_bytes: bytes) -> LocalArtifact:

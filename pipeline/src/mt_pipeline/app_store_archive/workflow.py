@@ -21,7 +21,7 @@ from .r2_store import (
     RemotePublication,
     private_bucket,
 )
-from .staging import LocalArtifact, stage_archive
+from .staging import LocalArtifact, _rename_no_replace, stage_archive
 
 
 class WorkflowError(AppStoreArchiveError):
@@ -128,7 +128,7 @@ def restore_and_validate(
         ) from exc
 
     try:
-        staging.rename(destination)
+        _rename_no_replace(staging, destination)
     except OSError as exc:
         raise WorkflowError(f"archive restore collision; preserved at {staging}") from exc
     return RetrieveResult(

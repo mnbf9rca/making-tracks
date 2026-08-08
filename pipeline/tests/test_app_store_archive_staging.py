@@ -13,6 +13,7 @@ from app_store_archive_helpers import (
     FakeDittoCommands,
     make_archive,
 )
+from mt_pipeline.app_store_archive import staging as archive_staging
 from mt_pipeline.app_store_archive.archive import inspect_archive
 from mt_pipeline.app_store_archive.manifest import (
     ManifestValidationError,
@@ -316,6 +317,33 @@ def test_existing_different_packaged_archive_is_preserved_and_rejected(tmp_path:
     assert len(list(first.leaf.parent.glob(".archive-staging-*"))) == 1
 
 
+def test_existing_leaf_with_tampered_uploadable_archive_is_rejected(tmp_path: Path):
+    fixture = make_archive(tmp_path / "source")
+    identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
+    application_support = tmp_path / "Application Support"
+    first = stage_archive(
+        identity,
+        application_support,
+        CAPTURED_AT,
+        run=FakeDittoCommands().run,
+    )
+    existing_binary = (
+        first.archive / "Products/Applications/MakingTracks.app/MakingTracks"
+    )
+    existing_binary.write_bytes(b"tampered-uploadable-archive")
+
+    with pytest.raises(StagingError, match="different archive"):
+        stage_archive(
+            identity,
+            application_support,
+            "2026-08-07T00:01:00Z",
+            run=FakeDittoCommands().run,
+        )
+
+    assert existing_binary.read_bytes() == b"tampered-uploadable-archive"
+    assert len(list(first.leaf.parent.glob(".archive-staging-*"))) == 1
+
+
 def test_existing_invalid_manifest_is_preserved_and_rejected(tmp_path: Path):
     fixture = make_archive(tmp_path / "source")
     identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
@@ -373,16 +401,15 @@ def test_rename_collision_preserves_staging_and_does_not_replace_final_leaf(
     identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
     application_support = tmp_path / "Application Support"
     final_leaf = application_support / f"archives/1.0/1/{FULL_GIT_SHA}"
-    original_rename = Path.rename
+    original_finalize = archive_staging._rename_no_replace
 
     def collide(source: Path, target: Path):
         if source.name.startswith(".archive-staging-"):
             target.mkdir(parents=True)
-            (target / "collision-marker").write_text("racer", encoding="utf-8")
-            raise FileExistsError(target)
-        return original_rename(source, target)
+            return original_finalize(source, target)
+        return original_finalize(source, target)
 
-    monkeypatch.setattr(Path, "rename", collide)
+    monkeypatch.setattr(archive_staging, "_rename_no_replace", collide)
 
     with pytest.raises(StagingError, match=r"\.archive-staging-"):
         stage_archive(
@@ -392,7 +419,8 @@ def test_rename_collision_preserves_staging_and_does_not_replace_final_leaf(
             run=FakeDittoCommands().run,
         )
 
-    assert (final_leaf / "collision-marker").read_text(encoding="utf-8") == "racer"
+    assert final_leaf.is_dir()
+    assert list(final_leaf.iterdir()) == []
     assert len(list(final_leaf.parent.glob(".archive-staging-*"))) == 1
 
 
