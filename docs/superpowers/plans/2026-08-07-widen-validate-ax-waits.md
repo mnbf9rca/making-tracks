@@ -252,7 +252,7 @@ Do not install missing Python tooling ad hoc. Run the repository-required host S
 
 - [ ] **Step 3: Run adversarial review**
 
-Request distinct spec/correctness, test-teeth, and workflow/safety lenses. Require reviewers to challenge the five-line boundary, sanity-floor honesty, exact eight conversions, workflow trigger scope, and false-positive behavior around post-action assertions. Fix every surviving finding test-first.
+Request distinct spec/correctness, test-teeth, and workflow/safety lenses. Require reviewers to challenge the five-line boundary, sanity-floor honesty, exactly eight conversions, workflow trigger scope, and false-positive behavior around post-action assertions. Fix every surviving finding test-first.
 
 - [ ] **Step 4: Re-ground and publish**
 
