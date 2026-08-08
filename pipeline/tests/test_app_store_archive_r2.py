@@ -111,6 +111,24 @@ def test_publish_emits_upload_and_fresh_download_phase_boundaries(
     assert any(line.startswith("PHASE DONE app_store_archive.download ") for line in lines)
 
 
+def test_missing_object_probe_never_leaves_an_unpaired_download_phase(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    local = _local_artifact(tmp_path)
+
+    R2ArchiveStore(InMemoryS3(), BUCKET).publish(local)
+
+    lines = capsys.readouterr().err.splitlines()
+    starts = [
+        line for line in lines if line.startswith("PHASE START app_store_archive.download ")
+    ]
+    dones = [
+        line for line in lines if line.startswith("PHASE DONE app_store_archive.download ")
+    ]
+    assert len(starts) == len(dones)
+
+
 def test_publish_refuses_another_sha_before_any_object_get_or_put(tmp_path: Path):
     local = _local_artifact(tmp_path)
     client = InMemoryS3()

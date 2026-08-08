@@ -15,6 +15,7 @@ from app_store_archive_helpers import (
     make_archive,
 )
 from mt_pipeline.app_store_archive import cli
+from mt_pipeline.app_store_archive import workflow as archive_workflow
 from mt_pipeline.app_store_archive.archive import ArchiveValidationError
 from mt_pipeline.app_store_archive.r2_store import ArchiveStorageError
 from mt_pipeline.app_store_archive.workflow import (
@@ -97,6 +98,36 @@ def test_publish_invalid_archive_fails_before_local_or_remote_mutation(tmp_path:
             run=commands.run,
         )
 
+    assert not application_support.exists()
+    assert client.calls == []
+
+
+def test_publish_translates_source_tree_hashing_oserror_without_leaking_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fixture = make_archive(tmp_path / "source")
+    sentinel = "SOURCE_TREE_PATH_SENTINEL"
+    monkeypatch.setattr(
+        archive_workflow,
+        "_archive_tree_digest",
+        lambda _path: (_ for _ in ()).throw(OSError(sentinel)),
+    )
+    client = InMemoryS3()
+    application_support = tmp_path / "Application Support"
+
+    with pytest.raises(WorkflowError, match="source archive") as caught:
+        publish_archive(
+            fixture.archive,
+            repo_root=tmp_path,
+            application_support_root=application_support,
+            layout_path=_layout(tmp_path),
+            client=client,
+            captured_at="2026-08-07T00:00:00Z",
+            run=ReleaseCommands(fixture.commands).run,
+        )
+
+    assert sentinel not in str(caught.value)
     assert not application_support.exists()
     assert client.calls == []
 

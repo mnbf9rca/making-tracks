@@ -360,13 +360,14 @@ class R2ArchiveStore:
         replace: bool = False,
         expected_bytes: int | None = None,
     ) -> None:
+        response = self._download_response(key)
         run_blocking_phase(
             "app_store_archive.download",
             total_bytes=expected_bytes,
-            operation=lambda: self._download_to_path_now(key, path, replace=replace),
+            operation=lambda: self._write_download_response(response, path, replace=replace),
         )
 
-    def _download_to_path_now(self, key: str, path: Path, *, replace: bool) -> None:
+    def _download_response(self, key: str) -> Mapping[str, object]:
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
         except Exception as exc:
@@ -375,6 +376,15 @@ class R2ArchiveStore:
             raise ArchiveStorageError("archive object download failed") from exc
         if not isinstance(response, Mapping) or not hasattr(response.get("Body"), "read"):
             raise ArchiveStorageError("archive object response is invalid")
+        return response
+
+    def _write_download_response(
+        self,
+        response: Mapping[str, object],
+        path: Path,
+        *,
+        replace: bool,
+    ) -> None:
         mode = "wb" if replace else "xb"
         try:
             with path.open(mode) as destination:

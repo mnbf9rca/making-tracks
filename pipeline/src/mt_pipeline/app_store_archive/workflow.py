@@ -58,7 +58,10 @@ def publish_archive(
     run: CommandRunner = run_command,
 ) -> PublishResult:
     identity = inspect_archive(archive_path, repo_root, run=run)
-    source_tree_digest = _archive_tree_digest(identity.archive_path)
+    try:
+        source_tree_digest = _archive_tree_digest(identity.archive_path)
+    except OSError as exc:
+        raise WorkflowError("source archive tree is unavailable") from exc
     local = stage_archive(
         identity,
         application_support_root,
