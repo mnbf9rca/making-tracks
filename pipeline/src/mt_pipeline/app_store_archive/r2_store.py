@@ -360,12 +360,21 @@ class R2ArchiveStore:
         replace: bool = False,
         expected_bytes: int | None = None,
     ) -> None:
-        response = self._download_response(key)
-        run_blocking_phase(
+        def request_and_write() -> _MissingObject | None:
+            try:
+                response = self._download_response(key)
+            except _MissingObject as missing:
+                return missing
+            self._write_download_response(response, path, replace=replace)
+            return None
+
+        missing = run_blocking_phase(
             "app_store_archive.download",
             total_bytes=expected_bytes,
-            operation=lambda: self._write_download_response(response, path, replace=replace),
+            operation=request_and_write,
         )
+        if missing is not None:
+            raise missing
 
     def _download_response(self, key: str) -> Mapping[str, object]:
         try:

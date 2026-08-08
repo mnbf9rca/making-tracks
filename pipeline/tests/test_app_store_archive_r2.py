@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -13,6 +16,8 @@ from app_store_archive_helpers import (
 )
 from mt_pipeline.app_store_archive.archive import inspect_archive
 from mt_pipeline.app_store_archive.manifest import parse_manifest
+from mt_pipeline.app_store_archive.progress import run_blocking_phase
+from mt_pipeline.app_store_archive import r2_store as r2_store_module
 from mt_pipeline.app_store_archive.r2_store import (
     ArchiveStorageError,
     R2ArchiveStore,
@@ -296,6 +301,70 @@ def test_download_validates_manifest_before_archive_and_verifies_bytes(tmp_path:
         MANIFEST_KEY,
         ARCHIVE_KEY,
     ]
+
+
+def test_download_heartbeats_while_waiting_for_object_response(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    local = _local_artifact(tmp_path)
+
+    class BlockingFirstGetS3(InMemoryS3):
+        def __post_init__(self) -> None:
+            super().__post_init__()
+            self.request_started = Event()
+            self.release_request = Event()
+            self.did_block = False
+
+        def get_object(self, *, Bucket, Key):
+            if not self.did_block:
+                self.did_block = True
+                self.request_started.set()
+                if not self.release_request.wait(timeout=2):
+                    raise TimeoutError("test did not release object response")
+            return super().get_object(Bucket=Bucket, Key=Key)
+
+    client = BlockingFirstGetS3()
+    client.objects[(BUCKET, MANIFEST_KEY)] = local.manifest_bytes
+    client.objects[(BUCKET, ARCHIVE_KEY)] = local.archive_zip.read_bytes()
+    download_root = tmp_path / "downloads"
+    download_root.mkdir()
+
+    def run_fast_phase(name, *, total_bytes, operation):
+        return run_blocking_phase(
+            name,
+            total_bytes=total_bytes,
+            operation=operation,
+            heartbeat_every_seconds=0.005,
+        )
+
+    monkeypatch.setattr(r2_store_module, "run_blocking_phase", run_fast_phase)
+    capsys.readouterr()
+    output = ""
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            R2ArchiveStore(client, BUCKET).download,
+            "1.0",
+            "1",
+            FULL_GIT_SHA,
+            download_root,
+        )
+        assert client.request_started.wait(timeout=1)
+        deadline = time.monotonic() + 0.5
+        try:
+            while time.monotonic() < deadline:
+                output += capsys.readouterr().err
+                if "PHASE HEARTBEAT app_store_archive.download " in output:
+                    break
+                time.sleep(0.005)
+        finally:
+            client.release_request.set()
+        future.result(timeout=2)
+
+    output += capsys.readouterr().err
+    assert "PHASE START app_store_archive.download " in output
+    assert "PHASE HEARTBEAT app_store_archive.download " in output
 
 
 def test_download_invalid_manifest_never_requests_archive(tmp_path: Path):
