@@ -41,6 +41,19 @@ uv run mt-pipeline --region united-kingdom publish --db work.db
 
 Every stage after `extract` requires its immediate predecessor to have completed for the same region. A skipped predecessor fails loudly and names the stage to run first.
 
+To refresh a golden-area dump without losing its hand labels, name the exact prior TSV explicitly:
+
+```bash
+uv run mt-pipeline eval dump london \
+  --db work.db \
+  --run-id refresh-v2 \
+  --merge-existing docs/superpowers/eval/refresh-v1-golden-london.tsv
+```
+
+The named file supplies both active and retired annotation history. A missing, malformed, oversized,
+or wrong-area artifact fails before either output is created. Omitting `--merge-existing` produces an
+ordinary fresh unlabeled dump; the command never auto-discovers a prior file.
+
 ## Source Records
 
 `mt_pipeline.source_record.parse()` is the single defensive boundary every extractor will call. It delegates source-ref grammar and unsafe-text stripping to `mt_contracts`, bounds finite coordinates, and bounds plus cleans opaque `props`. `props` is intentionally opaque here: URL validation belongs to extractors when they map a known URL field, and A0 remains the final publish gate.
