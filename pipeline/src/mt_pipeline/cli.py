@@ -37,6 +37,7 @@ _DEFAULT_PIPELINE_LOG_DIR = pathlib.Path("/data/mt-data/logs")
 _PIPELINE_LOG_DIR_ENV = "MT_PIPELINE_LOG_DIR"
 _MAX_JSON_BYTES = 1_000_000
 _MAX_TSV_BYTES = 10_000_000
+_MAX_MERGE_SKIP_DETAILS = 20
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SAFE_LOG_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
@@ -1642,7 +1643,14 @@ def _merge_existing_golden_rows(
     text = _read_text_limited(path, max_bytes=_MAX_TSV_BYTES)
     parsed = golden.parse_labeled_tsv(text)
     if parsed.skipped:
-        details = "; ".join(f"{ident}: {reason}" for ident, reason in parsed.skipped)
+        details = "; ".join(
+            f"{ident!r}: {reason}"
+            for ident, reason in parsed.skipped[:_MAX_MERGE_SKIP_DETAILS]
+        )
+        omitted = len(parsed.skipped) - _MAX_MERGE_SKIP_DETAILS
+        if omitted > 0:
+            noun = "row" if omitted == 1 else "rows"
+            details += f"; {omitted} additional skipped {noun} omitted"
         raise ValueError(f"merge-existing parse skipped rows: {details}")
     artifact_areas = {row.area for row in parsed.rows}
     if artifact_areas != {area}:
@@ -1706,7 +1714,7 @@ def _run_eval(argv) -> int:
             print(str(exc), file=sys.stderr)
             return 1
         merge_counts: tuple[int, int, int] | None = None
-        if args.merge_existing:
+        if args.merge_existing is not None:
             try:
                 rows, merge_counts = _merge_existing_golden_rows(
                     rows,

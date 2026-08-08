@@ -83,6 +83,16 @@ def _clean_text(value: object) -> str:
     return cleaned
 
 
+def _validate_signal_name(key: object) -> str:
+    if not isinstance(key, str) or not key:
+        raise ValueError("signal names must be non-empty strings")
+    if len(key) > MAX_SIGNAL_KEY_LEN or strip_unsafe_text(key) != key:
+        raise ValueError(f"invalid signal name {key!r}")
+    if key[:1] in {"=", "+", "-", "@"}:
+        raise ValueError(f"spreadsheet-unsafe signal name {key!r}")
+    return key
+
+
 def _validate_signals_json(raw: str) -> dict[str, float | None]:
     if len(raw.encode("utf-8")) > MAX_SIGNALS_JSON_BYTES:
         raise ValueError("signals_json exceeds size limit")
@@ -176,7 +186,10 @@ def _parse_optional_float(raw: str) -> float | None:
     value = raw.strip()
     if value == "":
         return None
-    return float(value)
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"non-finite value {raw!r}")
+    return number
 
 
 def _parse_sample_weight(raw: str) -> float:
@@ -194,6 +207,7 @@ def parse_labeled_tsv(text: str) -> ParseResult:
     header: list[str] | None = None
     rows: dict[str, GoldenRow] = {}
     order: list[str] = []
+    signal_names: list[str] = []
     skipped: list[tuple[str, str]] = []
     parsed = 0
 
@@ -209,6 +223,20 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             header = fields
             if "place_id" not in header or "label" not in header:
                 return ParseResult([], 0, 0, [("header", "missing place_id or label column")], data_version)
+            if len(set(header)) != len(header):
+                return ParseResult([], 0, 0, [("header", "duplicate columns")], data_version)
+            signal_names = [
+                name
+                for name in header
+                if name not in (*BASE_COLUMNS, "labeled_by", "evidence", "label")
+            ]
+            if len(signal_names) > MAX_SIGNAL_COUNT:
+                return ParseResult([], 0, 0, [("header", "too many signal columns")], data_version)
+            try:
+                for name in signal_names:
+                    _validate_signal_name(name)
+            except ValueError as exc:
+                return ParseResult([], 0, 0, [("header", str(exc))], data_version)
             continue
 
         fields = (fields + [""] * len(header))[: len(header)]
@@ -234,13 +262,10 @@ def parse_labeled_tsv(text: str) -> ParseResult:
             score = float(cells.get("score", "0") or 0)
             lat = float(cells.get("lat", "0") or 0)
             lon = float(cells.get("lon", "0") or 0)
+            if not all(math.isfinite(value) for value in (score, lat, lon)):
+                raise ValueError("non-finite score or coordinate")
             tier = int(cells.get("tier", "0") or 0)
             sample_weight = _parse_sample_weight(cells.get("sample_weight", ""))
-            signal_names = [
-                name
-                for name in header
-                if name not in (*BASE_COLUMNS, "labeled_by", "evidence", "label")
-            ]
             signals = {
                 name: _parse_optional_float(cells.get(name, "")) for name in signal_names
             }
@@ -259,6 +284,8 @@ def parse_labeled_tsv(text: str) -> ParseResult:
         if existing is not None:
             if existing.label and label_value and existing.label != label_value:
                 skipped.append((place_id, "conflicting duplicate non-blank label"))
+            else:
+                skipped.append((place_id, "duplicate place_id"))
             if label_value is None:
                 continue
         else:
@@ -305,8 +332,14 @@ def merge_labels(
     new_ids = {row.place_id for row in new_rows}
 
     new_versions = {row.data_version for row in new_rows}
-    old_versions = {row.data_version for row in existing_labeled}
-    if len(new_versions) == 1 and new_versions == old_versions and old_ids != new_ids:
+    active_existing = [row for row in existing_labeled if row.active]
+    active_old_ids = {row.place_id for row in active_existing}
+    active_old_versions = {row.data_version for row in active_existing}
+    if (
+        len(new_versions) == 1
+        and new_versions == active_old_versions
+        and active_old_ids != new_ids
+    ):
         raise ValueError("candidate set changed without data_version changing")
 
     merged = []
