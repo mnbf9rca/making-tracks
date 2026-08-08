@@ -7,36 +7,70 @@
   <title>Visit date context — accessibility text</title>
 </head>
 <body class="ax">
-  <main class="phone" aria-label="Visit date editor scrolled to context at accessibility text size">
+  <main class="phone" aria-label="Visit date editor at accessibility 5 text size">
     <div class="status"><span>9:41</span><span>100%</span></div>
-    <nav class="nav"><span class="back">‹ My tracks</span><span class="title">Visit date</span><span></span></nav>
+    <nav class="nav"><span class="back">‹ My tracks</span><span class="title">Visit date</span><span class="nav-spacer"></span></nav>
     <section class="scroll">
+      <header class="summary">
+        <div class="summary-line"><span>⌖</span><span>Sultan Abdul Samad Building</span></div>
+        <h1>Correct the day</h1>
+        <p>Choose the day this visit belongs to. Making Tracks keeps the visit as your own entry, not as a GPS trace.</p>
+      </header>
+
       <h2 class="section-title">Selected visit</h2>
-      <article class="selected-card">
+      <article class="selected-card" id="selected-card">
         <div class="visit-head">
-          <span class="pin">pin</span>
+          <span class="pin" aria-label="Pinned visit">⌖</span>
           <div class="visit-text">
-            <div class="name">Sultan Abdul Samad Building and Merdeka Square</div>
+            <div class="name">Sultan Abdul Samad Building</div>
             <div class="meta">Historic building · 1:16 PM</div>
           </div>
-          <span class="heart">♡</span>
+          <span class="heart" aria-label="Not loved">♡</span>
         </div>
         <div class="controls">
-          <div class="datebox"><span>Visit date</span><strong>Jul 20, 2026 <b class="calendar">▣</b></strong></div>
-          <div class="delete">del</div>
+          <div class="datebox"><span>Visit date</span><strong>Jul 20, 2026 <b class="calendar" aria-label="Calendar">▣</b></strong></div>
+          <div class="delete">Delete</div>
         </div>
+        <div class="time-note">Changing the day keeps the time you recorded — it will not invent a new one.</div>
       </article>
 
-      <h2 class="section-title">Other visits here</h2>
+      <h2 class="section-title" id="history-title">Other visits here</h2>
       <div class="history-list" aria-label="Other visits here, newest first">
-        <div class="history-row"><span class="history-mark">↺</span><div><div class="date">Aug 2, 2026</div><div class="time">6:42 PM</div></div></div>
-        <div class="history-row"><span class="history-mark">↺</span><div><div class="date">Jun 14, 2026</div><div class="time">10:08 AM</div></div></div>
+        <div class="history-row"><span class="history-mark" aria-label="Recorded visit">↺</span><div><div class="date">Aug 2, 2026</div><div class="time">6:42 PM</div></div></div>
+        <div class="history-row"><span class="history-mark" aria-label="Recorded visit">↺</span><div><div class="date">Jun 14, 2026</div><div class="time">10:08 AM</div></div></div>
       </div>
 
-      <h2 class="section-title">After save</h2>
+      <h2 class="section-title" id="after-save-title">After save</h2>
       <aside class="after-save"><strong>Added to Jul 20</strong>The visit moves to the end of that local day’s order. Reorder it from the full My tracks list.</aside>
+      <output id="render-metrics" hidden></output>
     </section>
-    <footer class="bar"><div class="button">Cancel</div><div class="button primary">Save day</div></footer>
+    <footer class="bar"><div class="button cancel">Cancel</div><div class="button primary">Save day</div></footer>
   </main>
+  <script>
+    const scrollRegion = document.querySelector(".scroll");
+    const state = new URLSearchParams(window.location.search).get("state") || "selected";
+    const targets = {
+      selected: document.getElementById("selected-card"),
+      history: document.getElementById("history-title"),
+      consequence: document.getElementById("after-save-title")
+    };
+
+    function applyScrollState() {
+      const target = targets[state] || targets.selected;
+      scrollRegion.scrollTop = Math.min(
+        target.offsetTop - 10,
+        scrollRegion.scrollHeight - scrollRegion.clientHeight
+      );
+      document.getElementById("render-metrics").textContent = [
+        `state=${state}`,
+        `scrollTop=${scrollRegion.scrollTop}`,
+        `scrollHeight=${scrollRegion.scrollHeight}`,
+        `clientHeight=${scrollRegion.clientHeight}`
+      ].join(";");
+    }
+
+    applyScrollState();
+    requestAnimationFrame(applyScrollState);
+  </script>
 </body>
 </html>
