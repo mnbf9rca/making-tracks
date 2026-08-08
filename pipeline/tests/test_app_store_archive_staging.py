@@ -373,6 +373,31 @@ def test_existing_leaf_with_mode_drift_is_rejected(tmp_path: Path):
     assert len(list(first.leaf.parent.glob(".archive-staging-*"))) == 1
 
 
+def test_existing_leaf_with_archive_root_mode_drift_is_rejected(tmp_path: Path):
+    fixture = make_archive(tmp_path / "source")
+    identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)
+    application_support = tmp_path / "Application Support"
+    first = stage_archive(
+        identity,
+        application_support,
+        CAPTURED_AT,
+        run=FakeDittoCommands().run,
+    )
+    original_mode = first.archive.stat().st_mode
+    first.archive.chmod(original_mode ^ stat.S_IWGRP)
+
+    with pytest.raises(StagingError, match="different archive"):
+        stage_archive(
+            identity,
+            application_support,
+            "2026-08-07T00:01:00Z",
+            run=FakeDittoCommands().run,
+        )
+
+    assert first.archive.stat().st_mode == (original_mode ^ stat.S_IWGRP)
+    assert len(list(first.leaf.parent.glob(".archive-staging-*"))) == 1
+
+
 def test_existing_invalid_manifest_is_preserved_and_rejected(tmp_path: Path):
     fixture = make_archive(tmp_path / "source")
     identity = inspect_archive(fixture.archive, tmp_path, run=fixture.commands.run)

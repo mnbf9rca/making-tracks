@@ -207,6 +207,8 @@ def _archive_tree_digest(root: Path) -> str:
     if root.is_symlink() or not root.is_dir():
         raise OSError("invalid archive tree")
     digest = hashlib.sha256()
+    root_mode = root.stat().st_mode & 0o7777
+    digest.update(b"D\0.\0" + oct(root_mode).encode("ascii") + b"\0")
     for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
         relative = path.relative_to(root).as_posix().encode("utf-8")
         if path.is_symlink():
