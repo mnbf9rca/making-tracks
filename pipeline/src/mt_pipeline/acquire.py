@@ -946,9 +946,22 @@ def _wikidata_sitelink_titles(
     max_bytes = int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     site = f"{language}wiki"
     out: dict[str, str] = {}
+    phase = progress.PhaseProgress(
+        "acquire.qid_sitelink.entity_lookup",
+        region=language,
+        total=len(qids),
+        total_label="qids",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    phase.start()
     for batch in _chunks(qids, qid_batch_size):
-        data = _retry_json(
-            _wikidata_entities_url(endpoint, batch, language=language),
+        data = _retry_json_with_phase_heartbeats(
+            phase=phase,
+            processed=processed,
+            extra=lambda: f" titles={len(out)}",
+            url=_wikidata_entities_url(endpoint, batch, language=language),
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
@@ -969,6 +982,9 @@ def _wikidata_sitelink_titles(
             title = page.get("title") if isinstance(page, dict) else None
             if isinstance(title, str) and title:
                 out[qid] = title
+        processed += len(batch)
+        phase.tick(processed, extra=f" titles={len(out)}")
+    phase.done(processed, extra=f" titles={len(out)}")
     return dict(sorted(out.items()))
 
 
@@ -1013,9 +1029,25 @@ def acquire_qid_sitelink_wikipedia(
     expected_hosts = set(wikipedia_config["allowed_hosts"])
     max_bytes = int(wikipedia_config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     qid_pages: list[dict] = []
+    skipped_mismatch = 0
+    page_phase = progress.PhaseProgress(
+        "acquire.qid_sitelink.page_fetch",
+        region=language,
+        total=len(qid_by_title),
+        total_label="titles",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    page_phase.start()
     for title_batch in _chunks(sorted(qid_by_title), title_batch_size):
-        data = _retry_json(
-            _wiki_pages_by_title_url(endpoint, title_batch),
+        data = _retry_json_with_phase_heartbeats(
+            phase=page_phase,
+            processed=processed,
+            extra=lambda: (
+                f" pages={len(qid_pages)} skipped_mismatch={skipped_mismatch}"
+            ),
+            url=_wiki_pages_by_title_url(endpoint, title_batch),
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
@@ -1052,6 +1084,7 @@ def acquire_qid_sitelink_wikipedia(
                 else None
             )
             if wikibase_item != qid:
+                skipped_mismatch += 1
                 continue
             lat, lon = seed_map[qid]
             try:
@@ -1073,6 +1106,15 @@ def acquire_qid_sitelink_wikipedia(
             if image_url is not None:
                 item["image"] = image_url
             qid_pages.append(item)
+        processed += len(title_batch)
+        page_phase.tick(
+            processed,
+            extra=f" pages={len(qid_pages)} skipped_mismatch={skipped_mismatch}",
+        )
+    page_phase.done(
+        processed,
+        extra=f" pages={len(qid_pages)} skipped_mismatch={skipped_mismatch}",
+    )
 
     snapshot["qid_pages"] = sorted(
         qid_pages, key=lambda item: (str(item["qid"]), int(item["pageid"]))

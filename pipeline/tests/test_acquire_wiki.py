@@ -779,7 +779,12 @@ def test_wikipedia_persist_done_is_not_logged_when_atomic_write_fails(
     assert "PHASE DONE acquire.wikipedia.persist" not in err
 
 
-def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_pages(tmp_path):
+def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_pages(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_RECORDS", 1, raising=False
+    )
     snapshot = tmp_path / "wikipedia.snapshot.json"
     snapshot.write_text(
         json.dumps(
@@ -805,31 +810,34 @@ def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_page
         if parsed.netloc == "www.wikidata.org":
             assert expected_hosts == {"www.wikidata.org"}
             assert params["action"] == ["wbgetentities"]
-            assert params["ids"] == ["Q42|Q99"]
             assert params["maxlag"] == ["5"]
-            return {
-                "entities": {
-                    "Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}},
-                    "Q99": {"sitelinks": {"enwiki": {"title": "Wrong Article"}}},
-                }
-            }
+            qid = params["ids"][0]
+            title = "QID Article" if qid == "Q42" else "Wrong Article"
+            return {"entities": {qid: {"sitelinks": {"enwiki": {"title": title}}}}}
         assert expected_hosts == {"en.wikipedia.org"}
-        assert params["titles"] == ["QID Article|Wrong Article"]
         assert params["prop"] == ["extracts|pageimages|pageprops"]
         assert params["exlimit"] == ["max"]
         assert params["maxlag"] == ["5"]
+        title = params["titles"][0]
+        if title == "QID Article":
+            return {
+                "query": {
+                    "pages": {
+                        "12345": {
+                            "pageid": 12345,
+                            "title": "QID Article",
+                            "extract": "Verified extract.",
+                            "pageprops": {"wikibase_item": "Q42"},
+                            "original": {
+                                "source": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg"
+                            },
+                        }
+                    }
+                }
+            }
         return {
             "query": {
                 "pages": {
-                    "12345": {
-                        "pageid": 12345,
-                        "title": "QID Article",
-                        "extract": "Verified extract.",
-                        "pageprops": {"wikibase_item": "Q42"},
-                        "original": {
-                            "source": "https://upload.wikimedia.org/wikipedia/commons/a/aa/Fort.jpg"
-                        },
-                    },
                     "999": {
                         "pageid": 999,
                         "title": "Wrong Article",
@@ -857,6 +865,8 @@ def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_page
             "allowed_hosts": ["en.wikipedia.org"],
         },
         fetch_json=fetch_json,
+        qid_batch_size=1,
+        title_batch_size=1,
         sleep=lambda _seconds: None,
         retrieved_at="2026-07-20T01:00:00Z",
     )
@@ -877,7 +887,85 @@ def test_qid_sitelink_acquisition_augments_wikipedia_snapshot_with_verified_page
             "wikibase_item": "Q42",
         }
     ]
-    assert len(calls) == 2
+    assert len(calls) == 4
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.qid_sitelink.entity_lookup region=en qids=2" in err
+    assert (
+        "PHASE HEARTBEAT acquire.qid_sitelink.entity_lookup region=en processed=1/2"
+        in err
+    )
+    assert "titles=1" in err
+    assert "PHASE DONE acquire.qid_sitelink.entity_lookup region=en processed=2/2" in err
+    assert "PHASE START acquire.qid_sitelink.page_fetch region=en titles=2" in err
+    assert (
+        "PHASE HEARTBEAT acquire.qid_sitelink.page_fetch region=en processed=1/2"
+        in err
+    )
+    assert "pages=1 skipped_mismatch=0" in err
+    assert "PHASE DONE acquire.qid_sitelink.page_fetch region=en processed=2/2" in err
+    assert "skipped_mismatch=1" in err
+
+
+def test_qid_sitelink_entity_lookup_heartbeats_while_request_is_busy(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        acquire, "_ACQUIRE_HEARTBEAT_EVERY_SECONDS", 0.01, raising=False
+    )
+    snapshot = tmp_path / "wikipedia.snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "_meta": {"complete": True, "retrieved_at": "2026-07-20T00:00:00Z"},
+                "lang": "en",
+                "pages": [],
+            }
+        )
+    )
+
+    def fetch_json(url, *, expected_hosts, max_bytes, headers):
+        parsed = urllib.parse.urlparse(url)
+        if parsed.netloc == "www.wikidata.org":
+            time.sleep(0.03)
+            return {
+                "entities": {
+                    "Q42": {"sitelinks": {"enwiki": {"title": "QID Article"}}}
+                }
+            }
+        return {
+            "query": {
+                "pages": {
+                    "42": {
+                        "pageid": 42,
+                        "title": "QID Article",
+                        "extract": "Verified.",
+                        "pageprops": {"wikibase_item": "Q42"},
+                    }
+                }
+            }
+        }
+
+    acquire.acquire_qid_sitelink_wikipedia(
+        snapshot,
+        seeds=[{"qid": "Q42", "lat": 3.1, "lon": 101.7}],
+        language="en",
+        wikidata_config={
+            "endpoint": "https://www.wikidata.org/w/api.php",
+            "allowed_hosts": ["www.wikidata.org"],
+        },
+        wikipedia_config={
+            "endpoint": "https://en.wikipedia.org/w/api.php",
+            "allowed_hosts": ["en.wikipedia.org"],
+        },
+        fetch_json=fetch_json,
+        sleep=lambda _seconds: None,
+        retrieved_at="2026-07-20T01:00:00Z",
+    )
+
+    assert (
+        "PHASE HEARTBEAT acquire.qid_sitelink.entity_lookup region=en processed=0/1"
+        in capsys.readouterr().err
+    )
 
 
 def test_qid_sitelink_acquisition_refreshes_blank_accepted_extracts(tmp_path):
