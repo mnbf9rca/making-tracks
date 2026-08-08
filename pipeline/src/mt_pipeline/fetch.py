@@ -11,6 +11,7 @@ import pathlib
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -19,6 +20,8 @@ CONDITIONAL_FETCH_SCHEMA_VERSION = 1
 _CONDITIONAL_REQUEST_HEADERS = frozenset({"if-none-match", "if-modified-since"})
 
 _log = logging.getLogger(__name__)
+
+ProgressCallback = Callable[[int, int | None], None]
 
 
 class FetchError(Exception):
@@ -166,6 +169,28 @@ def _response_validators(response_headers) -> tuple[str | None, str | None]:
     )
 
 
+def _response_content_length(response_headers, *, max_bytes: int) -> int | None:
+    if response_headers is None:
+        return None
+    get_all = getattr(response_headers, "get_all", None)
+    if callable(get_all):
+        values = get_all("Content-Length") or []
+    else:
+        value = response_headers.get("Content-Length")
+        values = [] if value is None else [value]
+    if not values:
+        return None
+    if len(values) != 1:
+        raise FetchError(f"invalid Content-Length values: {values!r}")
+    raw = values[0]
+    if not isinstance(raw, str) or not raw.isascii() or not raw.isdigit():
+        raise FetchError(f"invalid Content-Length: {raw!r}")
+    total = int(raw)
+    if total > max_bytes:
+        raise FetchError(f"Content-Length exceeded {max_bytes} bytes")
+    return total
+
+
 def _read_response_bytes(resp, *, max_bytes: int, deadline: int) -> bytes:
     response_headers = getattr(resp, "headers", None)
     if response_headers is not None and response_headers.get("Content-Encoding"):
@@ -191,7 +216,12 @@ def _read_response_bytes(resp, *, max_bytes: int, deadline: int) -> bytes:
 
 
 def _stream_response_to_file(
-    resp, tmp_path: pathlib.Path, *, max_bytes: int, deadline: int
+    resp,
+    tmp_path: pathlib.Path,
+    *,
+    max_bytes: int,
+    deadline: int,
+    on_progress: ProgressCallback | None = None,
 ) -> tuple[int, str]:
     response_headers = getattr(resp, "headers", None)
     if response_headers is not None and response_headers.get("Content-Encoding"):
@@ -199,6 +229,10 @@ def _stream_response_to_file(
             "unexpected Content-Encoding "
             f"{response_headers.get('Content-Encoding')!r}"
         )
+
+    content_length = _response_content_length(response_headers, max_bytes=max_bytes)
+    if on_progress is not None:
+        on_progress(0, content_length)
 
     start = time.monotonic()
     total = 0
@@ -215,6 +249,8 @@ def _stream_response_to_file(
                 raise FetchError(f"response exceeded {max_bytes} bytes")
             digest.update(chunk)
             out.write(chunk)
+            if on_progress is not None:
+                on_progress(total, content_length)
     return total, digest.hexdigest()
 
 
@@ -373,6 +409,7 @@ def get_to_file(
     timeout: int = 30,
     deadline: int = 120,
     headers: dict[str, str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> int:
     if not _validate_target(url, expected_hosts):
         raise FetchError(f"invalid target: {url!r}")
@@ -383,24 +420,13 @@ def get_to_file(
     try:
         request = urllib.request.Request(url, headers=headers or {})
         with _opener(expected_hosts).open(request, timeout=timeout) as resp:
-            response_headers = getattr(resp, "headers", None)
-            if response_headers is not None and response_headers.get("Content-Encoding"):
-                raise FetchError(
-                    f"unexpected Content-Encoding {response_headers.get('Content-Encoding')!r}"
-                )
-
-            start = time.monotonic()
-            with open(tmp_path, "wb") as out:
-                while True:
-                    if time.monotonic() - start > deadline:
-                        raise FetchError("exceeded total download deadline")
-                    chunk = resp.read(65536)
-                    if not chunk:
-                        break
-                    written += len(chunk)
-                    if written > max_bytes:
-                        raise FetchError(f"response exceeded {max_bytes} bytes")
-                    out.write(chunk)
+            written, _sha256 = _stream_response_to_file(
+                resp,
+                tmp_path,
+                max_bytes=max_bytes,
+                deadline=deadline,
+                on_progress=on_progress,
+            )
         tmp_path.replace(dest_path)
     except FetchError:
         tmp_path.unlink(missing_ok=True)
@@ -543,6 +569,7 @@ def conditional_get_to_file(
     timeout: int = 30,
     deadline: int = 120,
     headers: dict[str, str] | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> ConditionalFetchResult:
     if not _validate_target(url, expected_hosts):
         raise FetchError(f"invalid target: {url!r}")
@@ -562,6 +589,7 @@ def conditional_get_to_file(
                 tmp_path,
                 max_bytes=max_bytes,
                 deadline=deadline,
+                on_progress=on_progress,
             )
             etag, last_modified = _response_validators(getattr(resp, "headers", None))
     except FetchError:

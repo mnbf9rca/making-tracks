@@ -249,24 +249,31 @@ def test_conditional_file_reuses_retained_file_on_304(tmp_path, monkeypatch):
     dest = tmp_path / "Example.jpg"
     opener = _SequencedOpener(
         [
-            _response(b"image-v1", {"ETag": "opaque-v1"}),
+            _response(
+                b"image-v1",
+                {"ETag": "opaque-v1", "Content-Length": str(len(b"image-v1"))},
+            ),
             _http_304(url),
         ]
     )
     monkeypatch.setattr(fetch, "_opener", lambda hosts: opener)
     store = fetch.ConditionalFetchStore(tmp_path / "conditional-fetch.json")
+    first_events = []
+    second_events = []
 
     first = fetch.conditional_get_to_file(
         url,
         dest,
         expected_hosts={"upload.wikimedia.org"},
         store=store,
+        on_progress=lambda done, total: first_events.append((done, total)),
     )
     second = fetch.conditional_get_to_file(
         url,
         dest,
         expected_hosts={"upload.wikimedia.org"},
         store=store,
+        on_progress=lambda done, total: second_events.append((done, total)),
     )
 
     assert dest.read_bytes() == b"image-v1"
@@ -274,6 +281,8 @@ def test_conditional_file_reuses_retained_file_on_304(tmp_path, monkeypatch):
     assert first.size == len(b"image-v1")
     assert second.status == "not_modified"
     assert second.size == len(b"image-v1")
+    assert first_events == [(0, len(b"image-v1")), (len(b"image-v1"), len(b"image-v1"))]
+    assert second_events == []
     assert _request_headers(opener.requests[1])["if-none-match"] == "opaque-v1"
 
 

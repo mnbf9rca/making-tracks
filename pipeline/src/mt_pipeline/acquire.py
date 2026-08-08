@@ -33,6 +33,11 @@ _WIKIPEDIA_HEARTBEAT_EVERY_PAGES = 10_000
 _WIKIPEDIA_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
 _BLANK_EXTRACT_HEARTBEAT_EVERY_PAGES = 10_000
 _BLANK_EXTRACT_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_ACQUIRE_HEARTBEAT_EVERY_RECORDS = progress.HEARTBEAT_EVERY_RECORDS
+_ACQUIRE_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_DOWNLOAD_HEARTBEAT_EVERY_BYTES = 64 * 1024 * 1024
+_DOWNLOAD_HEARTBEAT_EVERY_SECONDS = progress.HEARTBEAT_EVERY_SECONDS
+_REQUEST_HEARTBEAT_POLL_SECONDS = 0.1
 _QID_RE = re.compile(r"Q[0-9]+")
 _POINT_RE = re.compile(r"Point\(([-0-9.]+) ([-0-9.]+)\)")
 
@@ -321,6 +326,7 @@ def acquire_wikidata(
     retries: int = 6,
     sleep=time.sleep,
     retrieved_at: str | None = None,
+    region: str = "unknown",
 ) -> pathlib.Path:
     dest = _ensure_dir(dest_dir)
     out = snapshot_paths(dest)["wikidata"]
@@ -329,14 +335,29 @@ def acquire_wikidata(
     max_bytes = int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     bindings = []
     segments = []
+    qid_chunks = _chunks(sorted(class_qids), class_chunk_size)
+    tiles = bbox_tiles(bbox, tile_degrees=tile_degrees)
+    phase = progress.PhaseProgress(
+        "acquire.wikidata.bbox",
+        region=region,
+        total=len(qid_chunks) * len(tiles),
+        total_label="segments",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    phase.start()
 
     try:
-        for qid_chunk in _chunks(sorted(class_qids), class_chunk_size):
-            for tile in bbox_tiles(bbox, tile_degrees=tile_degrees):
+        for qid_chunk in qid_chunks:
+            for tile in tiles:
                 query = _wdqs_query(qid_chunk, tile)
                 url = _endpoint_url(endpoint, {"query": query, "format": "json"})
-                data = _retry_json(
-                    url,
+                data = _retry_json_with_phase_heartbeats(
+                    phase=phase,
+                    processed=processed,
+                    extra=lambda: f" bindings={len(bindings)}",
+                    url=url,
                     expected_hosts=expected_hosts,
                     max_bytes=max_bytes,
                     fetch_json=fetch_json,
@@ -358,12 +379,14 @@ def acquire_wikidata(
                         "query": query,
                     }
                 )
+                processed += 1
+                phase.tick(processed, extra=f" bindings={len(bindings)}")
     except Exception:
         out.unlink(missing_ok=True)
         out.with_name(f".{out.name}.tmp").unlink(missing_ok=True)
         raise
 
-    return _atomic_write_json(
+    written = _atomic_write_json(
         out,
         {
             "_meta": {
@@ -388,6 +411,8 @@ def acquire_wikidata(
             "results": {"bindings": bindings},
         },
     )
+    phase.done(processed, extra=f" bindings={len(bindings)}")
+    return written
 
 
 def _wiki_geosearch_url(endpoint: str, tile) -> str:
@@ -847,6 +872,43 @@ def _write_blank_extract_snapshot(
     return written
 
 
+def _call_with_phase_heartbeats(
+    *,
+    phase: progress.PhaseProgress,
+    processed: int,
+    extra: str | Callable[[], str],
+    call: Callable[[], object],
+) -> object:
+    future: concurrent.futures.Future = concurrent.futures.Future()
+
+    def run() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            result = call()
+        except BaseException as exc:
+            future.set_exception(exc)
+        else:
+            future.set_result(result)
+
+    worker = threading.Thread(
+        target=run,
+        name=f"phase-heartbeat-{phase.name}",
+        daemon=True,
+    )
+    worker.start()
+    while True:
+        try:
+            return future.result(
+                timeout=min(
+                    phase.heartbeat_every_seconds,
+                    _REQUEST_HEARTBEAT_POLL_SECONDS,
+                )
+            )
+        except concurrent.futures.TimeoutError:
+            phase.heartbeat_if_due(processed, extra=extra)
+
+
 def _retry_json_with_phase_heartbeats(
     *,
     phase: progress.PhaseProgress,
@@ -859,25 +921,19 @@ def _retry_json_with_phase_heartbeats(
     retries: int,
     sleep,
 ) -> dict:
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(
-            _retry_json,
+    return _call_with_phase_heartbeats(
+        phase=phase,
+        processed=processed,
+        extra=extra,
+        call=lambda: _retry_json(
             url,
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
             retries=retries,
             sleep=sleep,
-        )
-        while True:
-            done, _pending = concurrent.futures.wait(
-                {future},
-                timeout=phase.heartbeat_every_seconds,
-                return_when=concurrent.futures.FIRST_COMPLETED,
-            )
-            if done:
-                return future.result()
-            phase.heartbeat_if_due(processed, extra=extra)
+        ),
+    )
 
 
 def _commons_upload_url(value: object) -> str | None:
@@ -924,9 +980,22 @@ def _wikidata_sitelink_titles(
     max_bytes = int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     site = f"{language}wiki"
     out: dict[str, str] = {}
+    phase = progress.PhaseProgress(
+        "acquire.qid_sitelink.entity_lookup",
+        region=language,
+        total=len(qids),
+        total_label="qids",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    phase.start()
     for batch in _chunks(qids, qid_batch_size):
-        data = _retry_json(
-            _wikidata_entities_url(endpoint, batch, language=language),
+        data = _retry_json_with_phase_heartbeats(
+            phase=phase,
+            processed=processed,
+            extra=lambda: f" titles={len(out)}",
+            url=_wikidata_entities_url(endpoint, batch, language=language),
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
@@ -947,6 +1016,9 @@ def _wikidata_sitelink_titles(
             title = page.get("title") if isinstance(page, dict) else None
             if isinstance(title, str) and title:
                 out[qid] = title
+        processed += len(batch)
+        phase.tick(processed, extra=f" titles={len(out)}")
+    phase.done(processed, extra=f" titles={len(out)}")
     return dict(sorted(out.items()))
 
 
@@ -991,9 +1063,25 @@ def acquire_qid_sitelink_wikipedia(
     expected_hosts = set(wikipedia_config["allowed_hosts"])
     max_bytes = int(wikipedia_config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     qid_pages: list[dict] = []
+    skipped_mismatch = 0
+    page_phase = progress.PhaseProgress(
+        "acquire.qid_sitelink.page_fetch",
+        region=language,
+        total=len(qid_by_title),
+        total_label="titles",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    page_phase.start()
     for title_batch in _chunks(sorted(qid_by_title), title_batch_size):
-        data = _retry_json(
-            _wiki_pages_by_title_url(endpoint, title_batch),
+        data = _retry_json_with_phase_heartbeats(
+            phase=page_phase,
+            processed=processed,
+            extra=lambda: (
+                f" pages={len(qid_pages)} skipped_mismatch={skipped_mismatch}"
+            ),
+            url=_wiki_pages_by_title_url(endpoint, title_batch),
             expected_hosts=expected_hosts,
             max_bytes=max_bytes,
             fetch_json=fetch_json,
@@ -1030,6 +1118,7 @@ def acquire_qid_sitelink_wikipedia(
                 else None
             )
             if wikibase_item != qid:
+                skipped_mismatch += 1
                 continue
             lat, lon = seed_map[qid]
             try:
@@ -1051,6 +1140,15 @@ def acquire_qid_sitelink_wikipedia(
             if image_url is not None:
                 item["image"] = image_url
             qid_pages.append(item)
+        processed += len(title_batch)
+        page_phase.tick(
+            processed,
+            extra=f" pages={len(qid_pages)} skipped_mismatch={skipped_mismatch}",
+        )
+    page_phase.done(
+        processed,
+        extra=f" pages={len(qid_pages)} skipped_mismatch={skipped_mismatch}",
+    )
 
     snapshot["qid_pages"] = sorted(
         qid_pages, key=lambda item: (str(item["qid"]), int(item["pageid"]))
@@ -1431,7 +1529,7 @@ def acquire_osm(
     *,
     region_id: str,
     config: dict,
-    download_file=fetch.get_to_file,
+    download_file=None,
     fetch_text=None,
     retrieved_at: str | None = None,
 ) -> pathlib.Path:
@@ -1441,14 +1539,35 @@ def acquire_osm(
     expected_hosts = set(entry["allowed_hosts"])
     max_bytes = int(entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     md5_path = out.with_name(f"{out.name}.md5")
+    phase = progress.PhaseProgress(
+        "acquire.osm.download",
+        region=region_id,
+        total=None,
+        total_label="bytes",
+        heartbeat_every_records=_DOWNLOAD_HEARTBEAT_EVERY_BYTES,
+        heartbeat_every_seconds=_DOWNLOAD_HEARTBEAT_EVERY_SECONDS,
+    )
+    observe = progress.phase_byte_progress(phase, source="osm")
+    phase.start()
 
     try:
-        size = download_file(
-            entry["url"],
-            out,
-            expected_hosts=expected_hosts,
-            max_bytes=max_bytes,
-        )
+        if download_file is None:
+            size = fetch.get_to_file(
+                entry["url"],
+                out,
+                expected_hosts=expected_hosts,
+                max_bytes=max_bytes,
+                on_progress=observe,
+            )
+        else:
+            size = download_file(
+                entry["url"],
+                out,
+                expected_hosts=expected_hosts,
+                max_bytes=max_bytes,
+            )
+            observe(size, size)
+        phase.set_total(size)
         if fetch_text is None:
             fetch.get_to_file(
                 entry["md5_url"],
@@ -1481,6 +1600,7 @@ def acquire_osm(
         pathlib.Path(str(out) + ".meta.json").unlink(missing_ok=True)
         raise
 
+    phase.done(size, extra=f" source=osm bytes_downloaded={size}")
     return out
 
 
@@ -1489,11 +1609,20 @@ def acquire_registers(dest_dir, *, region_config, config_path=DEFAULT_REGISTER_C
     paths = {}
     for source in ("historic_england", "open_plaques"):
         if region_config.sources.get(source) is True:
+            phase = progress.PhaseProgress(
+                f"acquire.register.{source}.download",
+                region=region_config.region_id,
+                total=None,
+                total_label="bytes",
+                heartbeat_every_records=_DOWNLOAD_HEARTBEAT_EVERY_BYTES,
+                heartbeat_every_seconds=_DOWNLOAD_HEARTBEAT_EVERY_SECONDS,
+            )
             paths[source] = _snapshot.download_snapshot(
                 source,
                 dest_dir,
                 config=config,
                 enabled=True,
+                telemetry=phase,
             )
     return paths
 
@@ -1527,6 +1656,7 @@ def acquire_wikidata_redirect_map(
     retries: int = 3,
     sleep=time.sleep,
     retrieved_at: str | None = None,
+    region: str = "unknown",
 ) -> pathlib.Path:
     retrieved_at = retrieved_at or _now()
     if _parse_time(retrieved_at) < _parse_time(wikidata_retrieved_at):
@@ -1539,13 +1669,26 @@ def acquire_wikidata_redirect_map(
     max_bytes = int(config.get("max_bytes", fetch.MAX_RESPONSE_BYTES))
     redirects: dict[str, str] = {}
     segments = []
+    known_qids = sorted({qid for qid in qids if _QID_RE.fullmatch(qid)})
+    phase = progress.PhaseProgress(
+        "acquire.wikidata.redirect_map",
+        region=region,
+        total=len(known_qids),
+        total_label="qids",
+        heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+        heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+    )
+    processed = 0
+    phase.start()
 
     try:
-        known_qids = sorted({qid for qid in qids if _QID_RE.fullmatch(qid)})
         for qid_chunk in _chunks(known_qids, qid_chunk_size):
             query = _redirect_query(qid_chunk)
-            data = _retry_json(
-                _endpoint_url(endpoint, {"query": query, "format": "json"}),
+            data = _retry_json_with_phase_heartbeats(
+                phase=phase,
+                processed=processed,
+                extra=lambda: f" redirects={len(redirects)}",
+                url=_endpoint_url(endpoint, {"query": query, "format": "json"}),
                 expected_hosts=expected_hosts,
                 max_bytes=max_bytes,
                 fetch_json=fetch_json,
@@ -1564,12 +1707,14 @@ def acquire_wikidata_redirect_map(
                 if _QID_RE.fullmatch(source) and _QID_RE.fullmatch(target):
                     redirects[source] = target
             segments.append({"qids": qid_chunk, "count": len(rows), "query": query})
+            processed += len(qid_chunk)
+            phase.tick(processed, extra=f" redirects={len(redirects)}")
     except Exception:
         out.unlink(missing_ok=True)
         out.with_name(f".{out.name}.tmp").unlink(missing_ok=True)
         raise
 
-    return _atomic_write_json(
+    written = _atomic_write_json(
         out,
         {
             "_meta": {
@@ -1582,6 +1727,8 @@ def acquire_wikidata_redirect_map(
             "redirects": dict(sorted(redirects.items())),
         },
     )
+    phase.done(processed, extra=f" redirects={len(redirects)}")
+    return written
 
 
 def wikidata_snapshot_retrieved_at(snapshot_path) -> str:
@@ -1667,6 +1814,7 @@ def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[
             class_qids=load_class_qids(),
             config=wikidata_options,
             tile_degrees=float(wikidata_options.get("tile_degrees", 1.0)),
+            region=region_config.region_id,
         )
     if region_config.sources.get("wikipedia") is True:
         language = region_config.languages[0]
@@ -1701,25 +1849,64 @@ def acquire_all(dest_dir, *, region_config, config_path=DEFAULT_CONFIG) -> dict[
                 )
             )
             pageview_cache = dest / "pageviews"
+            titles = _wikipedia_titles(
+                paths["wikipedia"], max_titles=max_titles
+            )
+            pageview_phase = progress.PhaseProgress(
+                "acquire.pageviews.title_fetch",
+                region=region_config.region_id,
+                total=len(titles),
+                total_label="titles",
+                heartbeat_every_records=_ACQUIRE_HEARTBEAT_EVERY_RECORDS,
+                heartbeat_every_seconds=_ACQUIRE_HEARTBEAT_EVERY_SECONDS,
+            )
+            pageview_stats = {"processed": 0, "fetched": 0, "cached": 0}
 
-            def fetch_title(title: str, title_window: tuple[str, str]):
-                return fetch_pageviews_for_title(
-                    title,
-                    title_window,
-                    language=language,
-                    config=pageview_config,
-                    retries=retries,
-                    sleep=time.sleep,
+            def observe_pageviews(
+                processed: int, total: int, fetched: int, cached: int
+            ) -> None:
+                pageview_stats.update(
+                    {"processed": processed, "fetched": fetched, "cached": cached}
+                )
+                pageview_phase.tick(
+                    processed, extra=f" fetched={fetched} cached={cached}"
                 )
 
+            def fetch_title(title: str, title_window: tuple[str, str]):
+                return _call_with_phase_heartbeats(
+                    phase=pageview_phase,
+                    processed=pageview_stats["processed"],
+                    extra=lambda: (
+                        f" fetched={pageview_stats['fetched']}"
+                        f" cached={pageview_stats['cached']}"
+                    ),
+                    call=lambda: fetch_pageviews_for_title(
+                        title,
+                        title_window,
+                        language=language,
+                        config=pageview_config,
+                        retries=retries,
+                        sleep=time.sleep,
+                    ),
+                )
+
+            pageview_phase.start()
             pageviews.acquire(
-                _wikipedia_titles(paths["wikipedia"], max_titles=max_titles),
+                titles,
                 window,
                 pageview_cache,
                 fetch=fetch_title,
                 enabled=True,
                 sleep=time.sleep,
                 polite_interval_seconds=polite_interval,
+                on_progress=observe_pageviews,
+            )
+            pageview_phase.done(
+                pageview_stats["processed"],
+                extra=(
+                    f" fetched={pageview_stats['fetched']}"
+                    f" cached={pageview_stats['cached']}"
+                ),
             )
             paths["pageviews"] = pageview_cache
     if region_config.sources.get("osm") is True:

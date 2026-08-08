@@ -3,12 +3,14 @@ import hashlib
 import io
 import json
 import pathlib
+from io import StringIO
 from types import SimpleNamespace
 import urllib.request
 import urllib.response
 
 import pytest
 
+from mt_pipeline import acquire
 from mt_pipeline import fetch
 from mt_pipeline.extractors import _snapshot
 
@@ -19,6 +21,18 @@ class _FakeOpener:
 
     def open(self, url, timeout=None):
         return io.BytesIO(self._body)
+
+
+class _HeaderOpener:
+    def __init__(self, body: bytes, header_values: dict[str, str]):
+        self._body = body
+        self._header_values = header_values
+
+    def open(self, url, timeout=None):
+        headers = email.message.Message()
+        for key, value in self._header_values.items():
+            headers[key] = value
+        return urllib.response.addinfourl(io.BytesIO(self._body), headers, url, 200)
 
 
 def test_get_to_file_rejects_non_https(tmp_path):
@@ -54,6 +68,91 @@ def test_get_to_file_writes_bytes(tmp_path, monkeypatch):
 
     assert n == 5
     assert (tmp_path / "o").read_bytes() == b"HELLO"
+
+
+def test_get_to_file_reports_header_and_cumulative_byte_progress(tmp_path, monkeypatch):
+    body = b"x" * (2 * 65536 + 3)
+    monkeypatch.setattr(
+        fetch,
+        "_opener",
+        lambda _hosts: _HeaderOpener(body, {"Content-Length": str(len(body))}),
+    )
+    events = []
+
+    written = fetch.get_to_file(
+        "https://historicengland.org.uk/x",
+        tmp_path / "o",
+        expected_hosts={"historicengland.org.uk"},
+        max_bytes=len(body),
+        on_progress=lambda done, total: events.append((done, total)),
+    )
+
+    assert written == len(body)
+    assert events == [
+        (0, len(body)),
+        (65536, len(body)),
+        (131072, len(body)),
+        (len(body), len(body)),
+    ]
+
+
+def test_get_to_file_reports_unknown_only_when_content_length_is_absent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        fetch,
+        "_opener",
+        lambda _hosts: _HeaderOpener(b"abc", {}),
+    )
+    events = []
+
+    fetch.get_to_file(
+        "https://historicengland.org.uk/x",
+        tmp_path / "o",
+        expected_hosts={"historicengland.org.uk"},
+        max_bytes=10,
+        on_progress=lambda done, total: events.append((done, total)),
+    )
+
+    assert events == [(0, None), (3, None)]
+
+
+@pytest.mark.parametrize("value", ["-1", "+1", "1, 1", "nope", "11"])
+def test_get_to_file_rejects_invalid_or_over_limit_content_length(
+    tmp_path, monkeypatch, value
+):
+    monkeypatch.setattr(
+        fetch,
+        "_opener",
+        lambda _hosts: _HeaderOpener(b"abc", {"Content-Length": value}),
+    )
+
+    with pytest.raises(fetch.FetchError, match="Content-Length"):
+        fetch.get_to_file(
+            "https://historicengland.org.uk/x",
+            tmp_path / "o",
+            expected_hosts={"historicengland.org.uk"},
+            max_bytes=10,
+        )
+
+
+def test_get_to_file_rejects_duplicate_content_length_headers(tmp_path, monkeypatch):
+    class DuplicateLengthOpener:
+        def open(self, url, timeout=None):
+            headers = email.message.Message()
+            headers["Content-Length"] = "3"
+            headers["Content-Length"] = "3"
+            return urllib.response.addinfourl(io.BytesIO(b"abc"), headers, url, 200)
+
+    monkeypatch.setattr(fetch, "_opener", lambda _hosts: DuplicateLengthOpener())
+
+    with pytest.raises(fetch.FetchError, match="Content-Length"):
+        fetch.get_to_file(
+            "https://historicengland.org.uk/x",
+            tmp_path / "o",
+            expected_hosts={"historicengland.org.uk"},
+            max_bytes=10,
+        )
 
 
 def test_get_to_file_rejects_content_encoding(tmp_path, monkeypatch):
@@ -255,6 +354,222 @@ def test_download_snapshot_default_fetch_uses_conditional_client(tmp_path, monke
         }
     ]
     assert json.loads(path.read_text()) == {"type": "FeatureCollection", "features": []}
+
+
+def test_download_snapshot_not_modified_reports_zero_response_bytes(
+    tmp_path, monkeypatch
+):
+    body = b'{"type":"FeatureCollection","features":[]}'
+    dest = tmp_path / "historic_england.snapshot"
+    dest.write_bytes(body)
+    config = {
+        "historic_england": {
+            "url": "https://historicengland.org.uk/nhle.geojson",
+            "allowed_hosts": ["historicengland.org.uk"],
+        }
+    }
+
+    def fake_conditional_fetch(*_args, **_kwargs):
+        return fetch.ConditionalFetchResult(
+            status="not_modified",
+            size=len(body),
+            sha256=hashlib.sha256(body).hexdigest(),
+            bytes_downloaded=0,
+        )
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    stream = StringIO()
+    telemetry = acquire.progress.PhaseProgress(
+        "acquire.register.historic_england.download",
+        region="united-kingdom",
+        total=None,
+        total_label="bytes",
+        stream=stream,
+    )
+
+    _snapshot.download_snapshot(
+        "historic_england",
+        tmp_path,
+        config=config,
+        enabled=True,
+        telemetry=telemetry,
+    )
+
+    output = stream.getvalue()
+    assert "PHASE HEARTBEAT" not in output
+    assert "processed=0/unknown" in output
+    assert "status=not_modified" in output
+
+
+def test_download_snapshot_retry_resets_missing_content_length_to_unknown(
+    tmp_path, monkeypatch
+):
+    pending = b'{"status":"ExportingData"}'
+    complete = b'{"type":"FeatureCollection","features":[]}'
+    config = {
+        "historic_england": {
+            "url": "https://historicengland.org.uk/nhle.geojson",
+            "allowed_hosts": ["historicengland.org.uk"],
+        }
+    }
+    calls = 0
+
+    def fake_conditional_fetch(url, dest, *, on_progress, **_kwargs):
+        nonlocal calls
+        calls += 1
+        body = pending if calls == 1 else complete
+        total = len(body) if calls == 1 else None
+        on_progress(0, total)
+        pathlib.Path(dest).write_bytes(body)
+        on_progress(len(body), total)
+        return fetch.ConditionalFetchResult(
+            status="downloaded",
+            size=len(body),
+            sha256=hashlib.sha256(body).hexdigest(),
+            bytes_downloaded=len(body),
+        )
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    stream = StringIO()
+    telemetry = acquire.progress.PhaseProgress(
+        "acquire.register.historic_england.download",
+        region="united-kingdom",
+        total=None,
+        total_label="bytes",
+        heartbeat_every_records=1,
+        stream=stream,
+    )
+
+    _snapshot.download_snapshot(
+        "historic_england",
+        tmp_path,
+        config=config,
+        enabled=True,
+        retries=1,
+        sleep=lambda _seconds: None,
+        telemetry=telemetry,
+    )
+
+    output = stream.getvalue()
+    assert calls == 2
+    assert "processed=0/unknown" in output
+    assert f"PHASE DONE acquire.register.historic_england.download region=united-kingdom processed={len(complete)}/unknown" in output
+
+
+def test_acquire_registers_reports_source_specific_byte_progress(
+    tmp_path, capsys, monkeypatch
+):
+    config_path = tmp_path / "registers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "historic_england": {
+                    "url": "https://historicengland.org.uk/nhle.geojson",
+                    "allowed_hosts": ["historicengland.org.uk"],
+                },
+                "open_plaques": {
+                    "url": "https://openplaques.org/data.json",
+                    "allowed_hosts": ["openplaques.org"],
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(acquire, "_DOWNLOAD_HEARTBEAT_EVERY_BYTES", 1, raising=False)
+
+    def fake_conditional_fetch(
+        url, dest, *, expected_hosts, max_bytes, store, on_progress=None
+    ):
+        body = (
+            b'{"type":"FeatureCollection","features":[]}'
+            if "historicengland" in url
+            else b"[]"
+        )
+        if on_progress is not None:
+            on_progress(0, len(body))
+        pathlib.Path(dest).write_bytes(body)
+        if on_progress is not None:
+            on_progress(len(body), len(body))
+        return SimpleNamespace(size=len(body), status="downloaded")
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    region = SimpleNamespace(
+        region_id="united-kingdom",
+        sources={"historic_england": True, "open_plaques": True},
+    )
+
+    paths = acquire.acquire_registers(
+        tmp_path, region_config=region, config_path=config_path
+    )
+
+    assert set(paths) == {"historic_england", "open_plaques"}
+    err = capsys.readouterr().err
+    sizes = {"historic_england": 42, "open_plaques": 2}
+    for source, size in sizes.items():
+        phase = f"acquire.register.{source}.download"
+        assert f"PHASE START {phase} region=united-kingdom bytes=unknown" in err
+        assert (
+            f"PHASE HEARTBEAT {phase} region=united-kingdom "
+            f"processed={size}/{size}" in err
+        )
+        assert (
+            f"PHASE DONE {phase} region=united-kingdom processed={size}/{size}"
+            in err
+        )
+        assert f"source={source}" in err
+    assert "status=downloaded" in err
+
+
+def test_register_sidecar_failure_does_not_emit_done(tmp_path, capsys, monkeypatch):
+    config_path = tmp_path / "registers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "open_plaques": {
+                    "url": "https://openplaques.org/data.json",
+                    "allowed_hosts": ["openplaques.org"],
+                }
+            }
+        )
+    )
+
+    def fake_conditional_fetch(
+        url, dest, *, expected_hosts, max_bytes, store, on_progress=None
+    ):
+        pathlib.Path(dest).write_bytes(b"[]")
+        if on_progress is not None:
+            on_progress(2, 2)
+        return SimpleNamespace(size=2, status="downloaded")
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    original_write_text = pathlib.Path.write_text
+
+    def fail_sidecar(path, data, *args, **kwargs):
+        if str(path).endswith(".meta.json"):
+            raise OSError("disk full")
+        return original_write_text(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", fail_sidecar)
+    region = SimpleNamespace(
+        region_id="united-kingdom",
+        sources={"historic_england": False, "open_plaques": True},
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        acquire.acquire_registers(
+            tmp_path, region_config=region, config_path=config_path
+        )
+
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.register.open_plaques.download" in err
+    assert "PHASE DONE acquire.register.open_plaques.download" not in err
 
 
 def test_historic_england_download_rejects_arcgis_export_status(tmp_path):

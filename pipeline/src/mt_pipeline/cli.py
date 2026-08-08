@@ -1916,6 +1916,7 @@ def _run_pipeline_command(args) -> int:
                 wikidata_retrieved_at=acquire.wikidata_snapshot_retrieved_at(
                     acquire.snapshot_paths(snap_dir)["wikidata"]
                 ),
+                region=region.region_id,
             )
         except acquire.AcquireError as exc:
             print(f"acquisition error: {exc}", file=sys.stderr)

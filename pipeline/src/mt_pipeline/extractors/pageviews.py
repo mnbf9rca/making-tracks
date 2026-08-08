@@ -7,6 +7,7 @@ import hashlib
 import json
 import pathlib
 import os
+from collections.abc import Callable
 
 MAX_TITLE_LEN = 300
 MAX_DAILY_POINTS = 4000
@@ -98,6 +99,7 @@ def acquire(
     enabled: bool = False,
     sleep=None,
     polite_interval_seconds: float = 0.0,
+    on_progress: Callable[[int, int, int, int], None] | None = None,
 ) -> int:
     if not enabled:
         return 0
@@ -108,16 +110,27 @@ def acquire(
         window = existing_window
     else:
         ensure_manifest(cache_dir, window)
+    deduped_titles = _deduped_titles(titles)
+    total = len(deduped_titles)
     fetched = 0
-    for title in _deduped_titles(titles):
+    cached = 0
+    processed = 0
+    for title in deduped_titles:
         cache_path = _cache_path(cache_dir, title, window)
         if _cache_complete(cache_path, title, window):
+            cached += 1
+            processed += 1
+            if on_progress is not None:
+                on_progress(processed, total, fetched, cached)
             continue
         data = fetch(title, window)
         tmp_path = cache_path.with_suffix(".tmp")
         tmp_path.write_text(json.dumps(data, sort_keys=True))
         os.replace(tmp_path, cache_path)
         fetched += 1
+        processed += 1
+        if on_progress is not None:
+            on_progress(processed, total, fetched, cached)
         if sleep is not None and polite_interval_seconds > 0:
             sleep(float(polite_interval_seconds))
     return fetched
