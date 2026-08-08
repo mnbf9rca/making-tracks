@@ -320,6 +320,25 @@ def test_same_data_version_with_changed_candidate_set_is_rejected():
         G.merge_labels([row(A, "St Paul's", 0.9, dv="v1")], ROWS)
 
 
+def test_same_version_guard_uses_active_rows_with_retired_older_history():
+    existing = [
+        row(A, "Active A", 0.9, "yes", dv="v2"),
+        row(B, "Retired B", 0.1, "no", active=False, dv="v1"),
+    ]
+
+    with pytest.raises(ValueError, match="candidate set changed"):
+        G.merge_labels(
+            [row(A, "Active A", 0.9, dv="v2"), row(C, "Unexpected C", 0.2, dv="v2")],
+            existing,
+        )
+
+
+@pytest.mark.parametrize("signal_name", ["=formula", "+formula", "-formula", "@formula"])
+def test_database_signal_names_cannot_produce_tsv_headers_parser_rejects(signal_name):
+    with pytest.raises(ValueError, match="spreadsheet-unsafe signal name"):
+        G._validate_signals_json(json.dumps({signal_name: 1.0}))
+
+
 def test_dump_area_reads_planned_a2_a3_a4_tables(conn):
     conn.executescript(
         """

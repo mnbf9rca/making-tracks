@@ -8,7 +8,7 @@ import pytest
 
 from mt_pipeline import cli, store
 from mt_pipeline.ergonomics import fingerprint
-from mt_pipeline.eval import report as eval_report
+from mt_pipeline.eval import golden, report as eval_report
 from mt_pipeline.extractors import pageviews
 from mt_pipeline.publish import publish_stage
 
@@ -1511,6 +1511,573 @@ def test_cli_eval_report_surfaces_parse_skips_loudly(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "skipped" in err
     assert "invalid place_id" in err
+
+
+EVAL_A = "mt1_" + "0" * 26
+EVAL_B = "mt1_" + "1" * 26
+EVAL_C = "mt1_" + "2" * 26
+
+
+def _seed_eval_dump_db(db: Path, candidates: list[tuple[str, str, float, float]]) -> None:
+    conn = store.connect(db)
+    store.init_schema(conn)
+    store.replace_places(
+        conn,
+        region="united-kingdom",
+        places=[
+            {
+                "place_id": place_id,
+                "name": name,
+                "lat": 51.51,
+                "lon": -0.11,
+                "refs": [f"wd:Q{index}"],
+                "member_refs": [f"wd:Q{index}"],
+                "status": "active",
+            }
+            for index, (place_id, name, _, _) in enumerate(candidates, start=1)
+        ],
+    )
+    for place_id, _, score, article_signal in candidates:
+        conn.execute(
+            "INSERT INTO place_categories (place_id, region, category, run_id) "
+            "VALUES (?, ?, ?, ?)",
+            (place_id, "united-kingdom", "history", "cat-v2"),
+        )
+        conn.execute(
+            "INSERT INTO place_scores (place_id, region, score, tier, signals_json, run_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                place_id,
+                "united-kingdom",
+                score,
+                2,
+                json.dumps({"article": article_signal}),
+                "score-v2",
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _eval_dump_rc(argv: list[str]) -> int:
+    try:
+        return cli.main(argv)
+    except SystemExit as exc:
+        return int(exc.code)
+
+
+def _golden_row(
+    place_id: str,
+    *,
+    area: str,
+    name: str,
+    score: float,
+    label: str | None,
+    labeled_by: str | None = None,
+    evidence: str = "",
+) -> golden.GoldenRow:
+    return golden.GoldenRow(
+        place_id=place_id,
+        area=area,
+        name=name,
+        lat=51.51,
+        lon=-0.11,
+        category="history",
+        tier=3,
+        score=score,
+        signals={"article": 0.1},
+        label=label,
+        data_version="v1",
+        sample_weight=47.0,
+        labeled_by=labeled_by,
+        evidence=evidence,
+    )
+
+
+def _rewrite_tsv_cell(tsv: str, place_id: str, column: str, value: str) -> str:
+    lines = tsv.splitlines()
+    header_index = next(
+        index for index, line in enumerate(lines) if line and not line.startswith("#")
+    )
+    header = lines[header_index].split("\t")
+    column_index = header.index(column)
+    for index in range(header_index + 1, len(lines)):
+        fields = lines[index].split("\t")
+        if fields[0] == place_id:
+            fields[column_index] = value
+            lines[index] = "\t".join(fields)
+            break
+    return "\n".join(lines) + "\n"
+
+
+def test_cli_eval_dump_merges_existing_annotation_history(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(
+        db,
+        [
+            (EVAL_A, "Fresh A", 0.95, 0.75),
+            (EVAL_C, "New C", 0.70, 0.50),
+        ],
+    )
+    existing_tsv = tmp_path / "v1.tsv"
+    existing_tsv.write_text(
+        golden.render_tsv(
+            [
+                _golden_row(
+                    EVAL_A,
+                    area="london",
+                    name="Old A",
+                    score=0.25,
+                    label="yes",
+                    labeled_by="rob-confirmed",
+                    evidence="manual evidence",
+                ),
+                _golden_row(
+                    EVAL_B,
+                    area="london",
+                    name="Vanished B",
+                    score=0.20,
+                    label="no",
+                    labeled_by="llm-research",
+                    evidence="batch evidence",
+                ),
+            ]
+        )
+    )
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(existing_tsv),
+        ]
+    )
+
+    assert rc == 0
+    stdout = capsys.readouterr().out.splitlines()
+    assert stdout[0] == "merge carried=1 new=1 retired=1"
+    parsed = golden.parse_labeled_tsv((out_dir / "v2-golden-london.tsv").read_text())
+    assert parsed.skipped == []
+    by_id = {row.place_id: row for row in parsed.rows}
+    assert by_id[EVAL_A].label == "yes"
+    assert by_id[EVAL_A].labeled_by == "rob-confirmed"
+    assert by_id[EVAL_A].evidence == "manual evidence"
+    assert by_id[EVAL_A].name == "Fresh A"
+    assert by_id[EVAL_A].score == 0.95
+    assert by_id[EVAL_A].signals == {"article": 0.75}
+    assert by_id[EVAL_A].data_version == "v2"
+    assert by_id[EVAL_A].sample_weight == 1.0
+    assert by_id[EVAL_C].label is None and by_id[EVAL_C].active
+    assert by_id[EVAL_B].label == "no" and not by_id[EVAL_B].active
+
+    json_rows = [
+        json.loads(line)
+        for line in (out_dir / "v2-golden-london.jsonl").read_text().splitlines()
+    ]
+    json_by_id = {row["place_id"]: row for row in json_rows}
+    assert set(json_by_id) == {EVAL_A, EVAL_B, EVAL_C}
+    assert json_by_id[EVAL_A]["label"] == "yes"
+    assert json_by_id[EVAL_B]["active"] is False
+
+
+@pytest.mark.parametrize(
+    "artifact_case",
+    ["missing", "empty-path", "empty-artifact", "skipped", "wrong-area"],
+)
+def test_cli_eval_dump_rejects_bad_merge_artifact_before_output(
+    tmp_path, capsys, artifact_case
+):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
+    merge_path = tmp_path / "existing.tsv"
+    if artifact_case == "empty-artifact":
+        merge_path.write_text("place_id\tarea\tlabel\n")
+    elif artifact_case == "skipped":
+        merge_path.write_text("place_id\tarea\tlabel\nmt1_BADID\tlondon\tyes\n")
+    elif artifact_case == "wrong-area":
+        merge_path.write_text(
+            golden.render_tsv(
+                [
+                    _golden_row(
+                        EVAL_A,
+                        area="kl",
+                        name="Wrong area",
+                        score=0.25,
+                        label="yes",
+                    )
+                ]
+            )
+        )
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            "" if artifact_case == "empty-path" else str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "eval dump merge error:" in err
+    if artifact_case == "empty-artifact":
+        assert "contains no rows" in err
+    assert not out_dir.exists()
+
+
+def test_cli_eval_dump_bounds_merge_artifact_before_output(tmp_path, capsys, monkeypatch):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
+    merge_path = tmp_path / "existing.tsv"
+    merge_path.write_text("123456789")
+    out_dir = tmp_path / "out"
+    monkeypatch.setattr(cli, "_MAX_TSV_BYTES", 8)
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    assert "exceeds 8 byte limit" in capsys.readouterr().err
+    assert not out_dir.exists()
+
+
+def test_cli_eval_dump_bounds_and_escapes_skipped_row_diagnostics(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
+    merge_path = tmp_path / "existing.tsv"
+    merge_path.write_text(
+        "place_id\tarea\tlabel\n"
+        + "".join(f"bad-\x1b[31m-{index}\tlondon\tyes\n" for index in range(21))
+    )
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "\x1b" not in err
+    assert "\\x1b" in err
+    assert "1 additional skipped row omitted" in err
+    assert len(err) < 7_000
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize("long_cell", ["place-id", "reason"])
+def test_cli_eval_dump_caps_one_very_long_skipped_row_detail(
+    tmp_path, capsys, long_cell
+):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
+    merge_path = tmp_path / "existing.tsv"
+    place_id = "x" * 100_000 if long_cell == "place-id" else EVAL_B
+    label = "yes" if long_cell == "place-id" else "x" * 100_000
+    merge_path.write_text(f"place_id\tarea\tlabel\n{place_id}\tlondon\t{label}\n")
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert len(err) < 1_000
+    assert "..." in err
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize(
+    ("artifact_case", "column", "value"),
+    [
+        ("non-finite-score", "score", "NaN"),
+        ("non-finite-lat", "lat", "Infinity"),
+        ("non-finite-lon", "lon", "-Infinity"),
+        ("non-finite-signal", "article", "NaN"),
+    ],
+)
+def test_cli_eval_dump_rejects_non_finite_retired_history_before_output(
+    tmp_path, capsys, artifact_case, column, value
+):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
+    merge_path = tmp_path / f"{artifact_case}.tsv"
+    prior = golden.render_tsv(
+        [
+            _golden_row(
+                EVAL_B,
+                area="london",
+                name="Retired B",
+                score=0.25,
+                label="yes",
+                labeled_by="rob",
+            )
+        ]
+    )
+    merge_path.write_text(_rewrite_tsv_cell(prior, EVAL_B, column, value))
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    assert "eval dump merge error:" in capsys.readouterr().err
+    assert not out_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "artifact_case",
+    [
+        "duplicate-row",
+        "formula-header",
+        "long-header",
+        "control-header",
+        "duplicate-header",
+        "too-many-signals",
+    ],
+)
+def test_cli_eval_dump_rejects_ambiguous_merge_structure_before_output(
+    tmp_path, capsys, artifact_case
+):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(db, [(EVAL_A, "Fresh A", 0.95, 0.75)])
+    merge_path = tmp_path / "existing.tsv"
+    if artifact_case == "duplicate-row":
+        prior = golden.render_tsv(
+            [
+                _golden_row(EVAL_B, area="kl", name="Hidden KL", score=0.25, label="yes"),
+                _golden_row(
+                    EVAL_B,
+                    area="london",
+                    name="Visible London",
+                    score=0.25,
+                    label="yes",
+                ),
+            ]
+        )
+    else:
+        prior = golden.render_tsv(
+            [_golden_row(EVAL_B, area="london", name="Retired B", score=0.25, label="yes")]
+        )
+        lines = prior.splitlines()
+        header_index = next(
+            index for index, line in enumerate(lines) if line and not line.startswith("#")
+        )
+        header = lines[header_index].split("\t")
+        signal_index = header.index("article")
+        if artifact_case == "too-many-signals":
+            signal_headers = [f"signal_{index}" for index in range(129)]
+            header[signal_index : signal_index + 1] = signal_headers
+            fields = lines[header_index + 1].split("\t")
+            fields[signal_index : signal_index + 1] = ["0.1"] * len(signal_headers)
+            lines[header_index + 1] = "\t".join(fields)
+        else:
+            header[signal_index] = {
+                "formula-header": "=HYPERLINK(https://example.invalid)",
+                "long-header": "x" * 65,
+                "control-header": "bad\x1bheader",
+                "duplicate-header": "label",
+            }[artifact_case]
+        lines[header_index] = "\t".join(header)
+        prior = "\n".join(lines) + "\n"
+    merge_path.write_text(prior)
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    assert "eval dump merge error:" in capsys.readouterr().err
+    assert not out_dir.exists()
+
+
+def test_cli_eval_dump_same_version_guard_uses_active_prior_candidates(
+    tmp_path, capsys
+):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(
+        db,
+        [
+            (EVAL_A, "Fresh A", 0.95, 0.75),
+            (EVAL_C, "Unexpected C", 0.70, 0.50),
+        ],
+    )
+    merge_path = tmp_path / "existing.tsv"
+    merge_path.write_text(
+        golden.render_tsv(
+            [
+                dataclasses.replace(
+                    _golden_row(
+                        EVAL_A,
+                        area="london",
+                        name="Prior A",
+                        score=0.25,
+                        label="yes",
+                    ),
+                    data_version="v2",
+                ),
+                dataclasses.replace(
+                    _golden_row(
+                        EVAL_B,
+                        area="london",
+                        name="Retired B",
+                        score=0.20,
+                        label="no",
+                    ),
+                    data_version="v1",
+                    active=False,
+                ),
+            ]
+        )
+    )
+    out_dir = tmp_path / "out"
+
+    rc = _eval_dump_rc(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+            "--merge-existing",
+            str(merge_path),
+        ]
+    )
+
+    assert rc == 1
+    assert "candidate set changed without data_version changing" in capsys.readouterr().err
+    assert not out_dir.exists()
+
+
+def test_cli_eval_dump_without_merge_is_byte_identical_fresh_output(tmp_path, capsys):
+    db = tmp_path / "w.db"
+    _seed_eval_dump_db(
+        db,
+        [
+            (EVAL_A, "Fresh A", 0.95, 0.75),
+            (EVAL_C, "New C", 0.70, 0.50),
+        ],
+    )
+    out_dir = tmp_path / "out"
+
+    rc = cli.main(
+        [
+            "eval",
+            "dump",
+            "london",
+            "--db",
+            str(db),
+            "--run-id",
+            "v2",
+            "--out-dir",
+            str(out_dir),
+        ]
+    )
+
+    assert rc == 0
+    conn = store.connect(db)
+    expected_rows = golden.dump_area(
+        conn,
+        "london",
+        [-0.15, 51.50, -0.07, 51.53],
+        data_version="v2",
+    )
+    conn.close()
+    assert (out_dir / "v2-golden-london.tsv").read_text() == golden.render_tsv(expected_rows)
+    assert (out_dir / "v2-golden-london.jsonl").read_text() == golden.render_jsonl(
+        expected_rows
+    )
+    assert all(row.label is None and row.active for row in expected_rows)
+    stdout = capsys.readouterr().out.splitlines()
+    assert stdout == [
+        f"wrote {out_dir / 'v2-golden-london.tsv'}",
+        f"wrote {out_dir / 'v2-golden-london.jsonl'}",
+    ]
 
 
 def test_cli_eval_dump_is_blocked_until_a2_a3_a4_tables_land(tmp_path, capsys):

@@ -37,6 +37,8 @@ _DEFAULT_PIPELINE_LOG_DIR = pathlib.Path("/data/mt-data/logs")
 _PIPELINE_LOG_DIR_ENV = "MT_PIPELINE_LOG_DIR"
 _MAX_JSON_BYTES = 1_000_000
 _MAX_TSV_BYTES = 10_000_000
+_MAX_MERGE_SKIP_DETAILS = 20
+_MAX_MERGE_SKIP_FIELD_CHARS = 160
 _SAFE_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SAFE_LOG_TOKEN_RE = re.compile(r"[^A-Za-z0-9._-]+")
 _VERSION_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
@@ -305,6 +307,10 @@ def _build_eval_parser() -> argparse.ArgumentParser:
         "--out-dir",
         default=str(_DEFAULT_EVAL_OUT_DIR),
         help="directory for TSV+JSONL dumps",
+    )
+    dump.add_argument(
+        "--merge-existing",
+        help="prior hand-labeled golden TSV whose active and retired rows carry forward",
     )
 
     report = subparsers.add_parser("report", help="score a labeled golden TSV")
@@ -1629,6 +1635,46 @@ def _load_area_bbox(path: pathlib.Path, area: str) -> list[float]:
     return out
 
 
+def _merge_existing_golden_rows(
+    new_rows: list[golden.GoldenRow],
+    *,
+    path: pathlib.Path,
+    area: str,
+) -> tuple[list[golden.GoldenRow], tuple[int, int, int]]:
+    text = _read_text_limited(path, max_bytes=_MAX_TSV_BYTES)
+    parsed = golden.parse_labeled_tsv(text)
+    if parsed.skipped:
+        def excerpt(value: object) -> str:
+            rendered = repr(value)
+            if len(rendered) <= _MAX_MERGE_SKIP_FIELD_CHARS:
+                return rendered
+            return rendered[: _MAX_MERGE_SKIP_FIELD_CHARS - 3] + "..."
+
+        details = "; ".join(
+            f"{excerpt(ident)}: {excerpt(reason)}"
+            for ident, reason in parsed.skipped[:_MAX_MERGE_SKIP_DETAILS]
+        )
+        omitted = len(parsed.skipped) - _MAX_MERGE_SKIP_DETAILS
+        if omitted > 0:
+            noun = "row" if omitted == 1 else "rows"
+            details += f"; {omitted} additional skipped {noun} omitted"
+        raise ValueError(f"merge-existing parse skipped rows: {details}")
+    if not parsed.rows:
+        raise ValueError("merge-existing artifact contains no rows")
+    artifact_areas = {row.area for row in parsed.rows}
+    if artifact_areas != {area}:
+        raise ValueError(
+            f"merge-existing areas {sorted(artifact_areas)!r} "
+            f"do not match requested area {area!r}"
+        )
+
+    existing_ids = {row.place_id for row in parsed.rows}
+    carried = sum(row.place_id in existing_ids for row in new_rows)
+    new = len(new_rows) - carried
+    merged, retired = golden.merge_labels(new_rows, parsed.rows)
+    return merged + retired, (carried, new, len(retired))
+
+
 def _run_eval(argv) -> int:
     args = _build_eval_parser().parse_args(argv)
     if args.eval_command == "report":
@@ -1676,6 +1722,17 @@ def _run_eval(argv) -> int:
         except (sqlite3.Error, RuntimeError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return 1
+        merge_counts: tuple[int, int, int] | None = None
+        if args.merge_existing is not None:
+            try:
+                rows, merge_counts = _merge_existing_golden_rows(
+                    rows,
+                    path=pathlib.Path(args.merge_existing),
+                    area=args.area,
+                )
+            except (OSError, ValueError) as exc:
+                print(f"eval dump merge error: {exc}", file=sys.stderr)
+                return 1
         out_dir = pathlib.Path(args.out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         stem = f"{run_token}-golden-{area_token}"
@@ -1683,6 +1740,9 @@ def _run_eval(argv) -> int:
         jsonl_path = out_dir / f"{stem}.jsonl"
         tsv_path.write_text(golden.render_tsv(rows))
         jsonl_path.write_text(golden.render_jsonl(rows))
+        if merge_counts is not None:
+            carried, new, retired = merge_counts
+            print(f"merge carried={carried} new={new} retired={retired}")
         print(f"wrote {tsv_path}")
         print(f"wrote {jsonl_path}")
         return 0
