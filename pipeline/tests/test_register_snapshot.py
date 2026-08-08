@@ -21,6 +21,18 @@ class _FakeOpener:
         return io.BytesIO(self._body)
 
 
+class _HeaderOpener:
+    def __init__(self, body: bytes, header_values: dict[str, str]):
+        self._body = body
+        self._header_values = header_values
+
+    def open(self, url, timeout=None):
+        headers = email.message.Message()
+        for key, value in self._header_values.items():
+            headers[key] = value
+        return urllib.response.addinfourl(io.BytesIO(self._body), headers, url, 200)
+
+
 def test_get_to_file_rejects_non_https(tmp_path):
     with pytest.raises(fetch.FetchError):
         fetch.get_to_file(
@@ -54,6 +66,85 @@ def test_get_to_file_writes_bytes(tmp_path, monkeypatch):
 
     assert n == 5
     assert (tmp_path / "o").read_bytes() == b"HELLO"
+
+
+def test_get_to_file_reports_header_and_cumulative_byte_progress(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        fetch,
+        "_opener",
+        lambda _hosts: _HeaderOpener(b"abcdef", {"Content-Length": "6"}),
+    )
+    events = []
+
+    written = fetch.get_to_file(
+        "https://historicengland.org.uk/x",
+        tmp_path / "o",
+        expected_hosts={"historicengland.org.uk"},
+        max_bytes=10,
+        on_progress=lambda done, total: events.append((done, total)),
+    )
+
+    assert written == 6
+    assert events == [(0, 6), (6, 6)]
+
+
+def test_get_to_file_reports_unknown_only_when_content_length_is_absent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        fetch,
+        "_opener",
+        lambda _hosts: _HeaderOpener(b"abc", {}),
+    )
+    events = []
+
+    fetch.get_to_file(
+        "https://historicengland.org.uk/x",
+        tmp_path / "o",
+        expected_hosts={"historicengland.org.uk"},
+        max_bytes=10,
+        on_progress=lambda done, total: events.append((done, total)),
+    )
+
+    assert events == [(0, None), (3, None)]
+
+
+@pytest.mark.parametrize("value", ["-1", "+1", "1, 1", "nope", "11"])
+def test_get_to_file_rejects_invalid_or_over_limit_content_length(
+    tmp_path, monkeypatch, value
+):
+    monkeypatch.setattr(
+        fetch,
+        "_opener",
+        lambda _hosts: _HeaderOpener(b"abc", {"Content-Length": value}),
+    )
+
+    with pytest.raises(fetch.FetchError, match="Content-Length"):
+        fetch.get_to_file(
+            "https://historicengland.org.uk/x",
+            tmp_path / "o",
+            expected_hosts={"historicengland.org.uk"},
+            max_bytes=10,
+        )
+
+
+def test_get_to_file_rejects_duplicate_content_length_headers(tmp_path, monkeypatch):
+    class DuplicateLengthOpener:
+        def open(self, url, timeout=None):
+            headers = email.message.Message()
+            headers["Content-Length"] = "3"
+            headers["Content-Length"] = "3"
+            return urllib.response.addinfourl(io.BytesIO(b"abc"), headers, url, 200)
+
+    monkeypatch.setattr(fetch, "_opener", lambda _hosts: DuplicateLengthOpener())
+
+    with pytest.raises(fetch.FetchError, match="Content-Length"):
+        fetch.get_to_file(
+            "https://historicengland.org.uk/x",
+            tmp_path / "o",
+            expected_hosts={"historicengland.org.uk"},
+            max_bytes=10,
+        )
 
 
 def test_get_to_file_rejects_content_encoding(tmp_path, monkeypatch):

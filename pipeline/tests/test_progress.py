@@ -1,5 +1,7 @@
 from io import StringIO
 
+import pytest
+
 from mt_pipeline import progress
 
 
@@ -52,6 +54,45 @@ def test_phase_progress_flushes_and_accepts_injected_clock_and_stream():
         "elapsed=2.0s recovered=1 skipped_mismatch=0 fallback_count=0\n"
     ) in out
     assert stream.flushes == 3
+
+
+def test_phase_progress_can_adopt_a_known_total_after_start():
+    clock = _StepClock()
+    stream = _FlushingStream()
+    phase = progress.PhaseProgress(
+        "acquire.osm.download",
+        region="united-kingdom",
+        total=None,
+        total_label="bytes",
+        heartbeat_every_records=1,
+        heartbeat_every_seconds=999,
+        clock=clock,
+        stream=stream,
+    )
+
+    phase.start()
+    phase.set_total(9)
+    clock.now = 3.0
+    phase.tick(9)
+    phase.done(9)
+
+    out = stream.getvalue()
+    assert "PHASE START acquire.osm.download region=united-kingdom bytes=unknown" in out
+    assert "processed=9/9 rate=3.0/s" in out
+    assert "PHASE DONE acquire.osm.download region=united-kingdom processed=9/9" in out
+
+
+@pytest.mark.parametrize("bad_total", [-1, True, 1.5, "9"])
+def test_phase_progress_rejects_invalid_late_totals(bad_total):
+    phase = progress.PhaseProgress(
+        "acquire.osm.download",
+        region="united-kingdom",
+        total=None,
+        total_label="bytes",
+    )
+
+    with pytest.raises(ValueError, match="total"):
+        phase.set_total(bad_total)
 
 
 def test_upload_progress_emits_pinned_publish_upload_shape_with_flush():

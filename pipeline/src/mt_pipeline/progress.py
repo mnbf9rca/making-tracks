@@ -39,6 +39,13 @@ class PhaseProgress:
     def _total_display(self) -> str:
         return "unknown" if self.total is None else str(self.total)
 
+    def set_total(self, total: int | None) -> None:
+        if total is not None and (
+            isinstance(total, bool) or not isinstance(total, int) or total < 0
+        ):
+            raise ValueError("progress total must be a non-negative integer or None")
+        self.total = total
+
     def start(self) -> None:
         print(
             f"PHASE START {self.name} region={self.region} "
