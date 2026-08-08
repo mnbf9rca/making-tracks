@@ -9,6 +9,7 @@ import urllib.response
 
 import pytest
 
+from mt_pipeline import acquire
 from mt_pipeline import fetch
 from mt_pipeline.extractors import _snapshot
 
@@ -346,6 +347,118 @@ def test_download_snapshot_default_fetch_uses_conditional_client(tmp_path, monke
         }
     ]
     assert json.loads(path.read_text()) == {"type": "FeatureCollection", "features": []}
+
+
+def test_acquire_registers_reports_source_specific_byte_progress(
+    tmp_path, capsys, monkeypatch
+):
+    config_path = tmp_path / "registers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "historic_england": {
+                    "url": "https://historicengland.org.uk/nhle.geojson",
+                    "allowed_hosts": ["historicengland.org.uk"],
+                },
+                "open_plaques": {
+                    "url": "https://openplaques.org/data.json",
+                    "allowed_hosts": ["openplaques.org"],
+                },
+            }
+        )
+    )
+    monkeypatch.setattr(acquire, "_DOWNLOAD_HEARTBEAT_EVERY_BYTES", 1, raising=False)
+
+    def fake_conditional_fetch(
+        url, dest, *, expected_hosts, max_bytes, store, on_progress=None
+    ):
+        body = (
+            b'{"type":"FeatureCollection","features":[]}'
+            if "historicengland" in url
+            else b"[]"
+        )
+        if on_progress is not None:
+            on_progress(0, len(body))
+        pathlib.Path(dest).write_bytes(body)
+        if on_progress is not None:
+            on_progress(len(body), len(body))
+        return SimpleNamespace(size=len(body), status="downloaded")
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    region = SimpleNamespace(
+        region_id="united-kingdom",
+        sources={"historic_england": True, "open_plaques": True},
+    )
+
+    paths = acquire.acquire_registers(
+        tmp_path, region_config=region, config_path=config_path
+    )
+
+    assert set(paths) == {"historic_england", "open_plaques"}
+    err = capsys.readouterr().err
+    sizes = {"historic_england": 42, "open_plaques": 2}
+    for source, size in sizes.items():
+        phase = f"acquire.register.{source}.download"
+        assert f"PHASE START {phase} region=united-kingdom bytes=unknown" in err
+        assert (
+            f"PHASE HEARTBEAT {phase} region=united-kingdom "
+            f"processed={size}/{size}" in err
+        )
+        assert (
+            f"PHASE DONE {phase} region=united-kingdom processed={size}/{size}"
+            in err
+        )
+        assert f"source={source}" in err
+    assert "status=downloaded" in err
+
+
+def test_register_sidecar_failure_does_not_emit_done(tmp_path, capsys, monkeypatch):
+    config_path = tmp_path / "registers.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "open_plaques": {
+                    "url": "https://openplaques.org/data.json",
+                    "allowed_hosts": ["openplaques.org"],
+                }
+            }
+        )
+    )
+
+    def fake_conditional_fetch(
+        url, dest, *, expected_hosts, max_bytes, store, on_progress=None
+    ):
+        pathlib.Path(dest).write_bytes(b"[]")
+        if on_progress is not None:
+            on_progress(2, 2)
+        return SimpleNamespace(size=2, status="downloaded")
+
+    monkeypatch.setattr(
+        _snapshot.fetch, "conditional_get_to_file", fake_conditional_fetch
+    )
+    original_write_text = pathlib.Path.write_text
+
+    def fail_sidecar(path, data, *args, **kwargs):
+        if str(path).endswith(".meta.json"):
+            raise OSError("disk full")
+        return original_write_text(path, data, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "write_text", fail_sidecar)
+    region = SimpleNamespace(
+        region_id="united-kingdom",
+        sources={"historic_england": False, "open_plaques": True},
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        acquire.acquire_registers(
+            tmp_path, region_config=region, config_path=config_path
+        )
+
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.register.open_plaques.download" in err
+    assert "PHASE DONE acquire.register.open_plaques.download" not in err
 
 
 def test_historic_england_download_rejects_arcgis_export_status(tmp_path):

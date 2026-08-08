@@ -107,6 +107,15 @@ class PhaseProgress:
         )
 
 
+def phase_byte_progress(phase: PhaseProgress, *, source: str):
+    def observe(done: int, total: int | None) -> None:
+        if total is not None:
+            phase.set_total(total)
+        phase.tick(done, extra=f" source={source} bytes_downloaded={done}")
+
+    return observe
+
+
 class UploadProgress:
     def __init__(
         self,

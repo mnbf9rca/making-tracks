@@ -1,10 +1,57 @@
+import email.message
 import hashlib
+import io
 import json
 import pathlib
+import urllib.response
 
 import pytest
 
 from mt_pipeline import acquire
+
+
+class _HeaderOpener:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def open(self, url, timeout=None):
+        headers = email.message.Message()
+        headers["Content-Length"] = str(len(self._body))
+        return urllib.response.addinfourl(io.BytesIO(self._body), headers, url, 200)
+
+
+def test_osm_production_download_reports_known_byte_progress(
+    tmp_path, capsys, monkeypatch
+):
+    body = b"PBF"
+    md5 = hashlib.md5(body, usedforsecurity=False).hexdigest()
+    monkeypatch.setattr(acquire, "_DOWNLOAD_HEARTBEAT_EVERY_BYTES", 1, raising=False)
+    monkeypatch.setattr(acquire.fetch, "_opener", lambda _hosts: _HeaderOpener(body))
+
+    path = acquire.acquire_osm(
+        tmp_path,
+        region_id="united-kingdom",
+        config={
+            "united-kingdom": {
+                "url": "https://download.geofabrik.de/europe/x.osm.pbf",
+                "md5_url": "https://download.geofabrik.de/europe/x.osm.pbf.md5",
+                "allowed_hosts": ["download.geofabrik.de"],
+                "max_bytes": 99,
+            }
+        },
+        fetch_text=lambda *_args, **_kwargs: md5,
+        retrieved_at="2026-07-15T00:00:00Z",
+    )
+
+    assert pathlib.Path(str(path) + ".meta.json").exists()
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.osm.download region=united-kingdom bytes=unknown" in err
+    assert (
+        "PHASE HEARTBEAT acquire.osm.download region=united-kingdom processed=3/3"
+        in err
+    )
+    assert "source=osm bytes_downloaded=3" in err
+    assert "PHASE DONE acquire.osm.download region=united-kingdom processed=3/3" in err
 
 
 def test_osm_acquisition_verifies_md5_and_writes_sha256_sidecar(tmp_path):
@@ -50,7 +97,7 @@ def test_osm_acquisition_verifies_md5_and_writes_sha256_sidecar(tmp_path):
     }
 
 
-def test_osm_acquisition_aborts_loudly_on_md5_mismatch(tmp_path):
+def test_osm_acquisition_aborts_loudly_on_md5_mismatch(tmp_path, capsys):
     def download(_url, dest, **_kwargs):
         pathlib.Path(dest).write_bytes(b"PBF")
         return 3
@@ -73,6 +120,9 @@ def test_osm_acquisition_aborts_loudly_on_md5_mismatch(tmp_path):
 
     assert not (tmp_path / "osm.osm.pbf").exists()
     assert not (tmp_path / "osm.osm.pbf.meta.json").exists()
+    err = capsys.readouterr().err
+    assert "PHASE START acquire.osm.download" in err
+    assert "PHASE DONE acquire.osm.download" not in err
 
 
 def test_osm_acquisition_cleans_transient_md5_file_on_download_failure(

@@ -8,7 +8,7 @@ import logging
 import pathlib
 import time
 
-from .. import fetch
+from .. import fetch, progress
 
 MAX_SIDECAR_BYTES = 64 * 1024
 MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024
@@ -74,6 +74,7 @@ def download_snapshot(
     enabled=False,
     retries: int = 6,
     sleep=time.sleep,
+    telemetry: progress.PhaseProgress | None = None,
 ) -> pathlib.Path:
     entry = config[source_key]
     dest = pathlib.Path(dest_dir) / f"{source_key}.snapshot"
@@ -83,6 +84,15 @@ def download_snapshot(
     conditional_store = fetch.ConditionalFetchStore(
         pathlib.Path(dest_dir) / "conditional-fetch.json"
     )
+    observe = (
+        progress.phase_byte_progress(telemetry, source=source_key)
+        if telemetry is not None
+        else None
+    )
+    if telemetry is not None:
+        telemetry.start()
+    bytes_downloaded = 0
+    status = None
     for attempt in range(retries + 1):
         if fetch_fn is None:
             result = fetch.conditional_get_to_file(
@@ -91,8 +101,11 @@ def download_snapshot(
                 expected_hosts=set(entry["allowed_hosts"]),
                 max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
                 store=conditional_store,
+                on_progress=observe,
             )
             size = result.size
+            bytes_downloaded = getattr(result, "bytes_downloaded", size)
+            status = getattr(result, "status", None)
         else:
             size = fetch_fn(
                 entry["url"],
@@ -100,6 +113,9 @@ def download_snapshot(
                 expected_hosts=set(entry["allowed_hosts"]),
                 max_bytes=entry.get("max_bytes", fetch.MAX_RESPONSE_BYTES),
             )
+            bytes_downloaded = size
+            if observe is not None:
+                observe(size, size)
         try:
             _validate_downloaded_snapshot(source_key, dest)
             break
@@ -122,6 +138,11 @@ def download_snapshot(
         "size": size,
     }
     pathlib.Path(str(dest) + ".meta.json").write_text(json.dumps(sidecar, sort_keys=True))
+    if telemetry is not None:
+        extra = f" source={source_key} bytes_downloaded={bytes_downloaded}"
+        if status is not None:
+            extra += f" status={status}"
+        telemetry.done(bytes_downloaded, extra=extra)
     return dest
 
 
